@@ -1,13 +1,14 @@
 /**
- * B3 — VFD Bridge Firmware (Node 11)
+ * B5 — DUT Bridge Firmware (Node 12)
  *
- * Upstream RS485 (Hub Ch 2) ↔ Downstream RS485 Modbus RTU bridge
- * for Delta VFD022EL43A. Electrically isolated downstream bus.
+ * Upstream RS485 (Hub Ch 3) ↔ Downstream RS485 Modbus RTU bridge
+ * for the Device Under Test (water meter).
  *
  * Commands:
- *   MB_READ   — Read holding registers from VFD
- *   MB_WRITE  — Write single register to VFD
- *   STATUS    — Node status + VFD address + last Modbus error
+ *   MB_READ   — Read holding registers from DUT
+ *   MB_WRITE  — Write single register to DUT
+ *   SET_ADDR  — Change DUT Modbus address (configurable per meter)
+ *   STATUS    — Node status + DUT address + last error
  *
  * Copyright (c) 2026 A.C.M.I.S Technologies LLP. All rights reserved.
  */
@@ -19,11 +20,12 @@
 
 // --- Serial ports ---
 HardwareSerial HostRS485(2);   // UART2 — upstream to RPi5 via hub
-HardwareSerial MbusRS485(1);   // UART1 — downstream to VFD
+HardwareSerial MbusRS485(1);   // UART1 — downstream to DUT
 
 // --- Globals ---
 ModbusMaster node;
 String inputBuffer;
+uint8_t dutAddr = DEFAULT_DUT_ADDR;
 uint8_t lastModbusError = 0;
 
 // --- Downstream RS485 DE control (for ModbusMaster callbacks) ---
@@ -86,7 +88,7 @@ void sendModbusError(uint8_t result) {
 // --- Command handlers ---
 
 void handleMbRead(JsonDocument &cmd) {
-    uint8_t addr = cmd["addr"] | VFD_ADDR;
+    uint8_t addr = cmd["addr"] | dutAddr;
     uint16_t reg = cmd["reg"] | 0;
     uint16_t count = cmd["count"] | 1;
 
@@ -112,7 +114,7 @@ void handleMbRead(JsonDocument &cmd) {
 }
 
 void handleMbWrite(JsonDocument &cmd) {
-    uint8_t addr = cmd["addr"] | VFD_ADDR;
+    uint8_t addr = cmd["addr"] | dutAddr;
     uint16_t reg = cmd["reg"] | 0;
     uint16_t value = cmd["value"] | 0;
 
@@ -127,13 +129,27 @@ void handleMbWrite(JsonDocument &cmd) {
     }
 }
 
+void handleSetAddr(JsonDocument &cmd) {
+    uint8_t newAddr = cmd["addr"] | 0;
+    if (newAddr == 0 || newAddr > 247) {
+        sendError("addr must be 1-247");
+        return;
+    }
+    dutAddr = newAddr;
+    node.begin(dutAddr, MbusRS485);
+
+    JsonDocument data;
+    data["dut_addr"] = dutAddr;
+    sendOk(data);
+}
+
 void handleStatus() {
     JsonDocument data;
     data["node_id"] = NODE_ID;
     data["fw"] = FW_NAME;
     data["ver"] = FW_VERSION;
     data["uptime_ms"] = millis();
-    data["vfd_addr"] = VFD_ADDR;
+    data["dut_addr"] = dutAddr;
     data["rs485_ok"] = (lastModbusError == 0);
     data["last_err"] = lastModbusError;
     sendOk(data);
@@ -152,6 +168,7 @@ void processCommand(const String &line) {
 
     if (strcmp(cmdStr, "MB_READ") == 0)        handleMbRead(cmd);
     else if (strcmp(cmdStr, "MB_WRITE") == 0)   handleMbWrite(cmd);
+    else if (strcmp(cmdStr, "SET_ADDR") == 0)    handleSetAddr(cmd);
     else if (strcmp(cmdStr, "STATUS") == 0)      handleStatus();
     else sendError("unknown_command");
 }
@@ -163,13 +180,13 @@ void setup() {
     digitalWrite(UP_DE_PIN, LOW);
     HostRS485.begin(UP_BAUD, SERIAL_8N1, UP_RX_PIN, UP_TX_PIN);
 
-    // Downstream RS485 (to VFD, isolated)
+    // Downstream RS485 (to DUT)
     pinMode(DN_DE_PIN, OUTPUT);
     digitalWrite(DN_DE_PIN, LOW);
     MbusRS485.begin(DN_BAUD, SERIAL_8N1, DN_RX_PIN, DN_TX_PIN);
 
     // ModbusMaster
-    node.begin(VFD_ADDR, MbusRS485);
+    node.begin(dutAddr, MbusRS485);
     node.preTransmission(preTransmission);
     node.postTransmission(postTransmission);
 
@@ -187,6 +204,7 @@ void setup() {
     data["fw"] = FW_NAME;
     data["ver"] = FW_VERSION;
     data["node_id"] = NODE_ID;
+    data["dut_addr"] = dutAddr;
     hostSendJson(doc);
 }
 

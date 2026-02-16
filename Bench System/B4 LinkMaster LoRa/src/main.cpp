@@ -1,12 +1,12 @@
 /**
- * B4 — LinkMaster LoRa Firmware (Bench Side)
+ * B4 — LinkMaster LoRa Firmware (Bench Side, Node 14)
  *
- * USB Serial ↔ LoRa SX1262 bridge with fragmentation and ACK.
- * Connects directly to Bench RPi5 via USB.
+ * Upstream RS485 (Hub Ch 5) ↔ LoRa SX1262 bridge with fragmentation and ACK.
+ * Connects to Bench RPi5 via Waveshare 8-CH RS485 Hub.
  *
  * Transport protocol:
- *   - Messages ≤254 bytes: sent as single DATA packet
- *   - Messages >254 bytes: split into FRAG packets (≤252 bytes each)
+ *   - Messages <=254 bytes: sent as single DATA packet
+ *   - Messages >254 bytes: split into FRAG packets (<=252 bytes each)
  *   - Every packet gets ACKed by the receiver
  *   - Retry up to 3 times on ACK timeout (3 seconds)
  *   - Receiver reassembles fragments before forwarding
@@ -17,10 +17,10 @@
  *   ACK:      [0x80|seq:6]
  *   FRAG_ACK: [0xC0|seq:6] [frag_idx]
  *
- * JSON protocol (USB Serial, 115200):
+ * JSON protocol (RS485 upstream, 115200):
  *   TX: {"cmd":"LORA_SEND","data":"<base64>"}\n
- *       → {"ok":true,"data":{"seq":5,"frags":1,"retries":0}}\n
- *       → {"ok":false,"error":"no_ack","seq":5,"frag":0}\n
+ *       -> {"ok":true,"data":{"seq":5,"frags":1,"retries":0}}\n
+ *       -> {"ok":false,"error":"no_ack","seq":5,"frag":0}\n
  *
  *   RX: {"event":"LORA_RX","data":"<base64>","rssi":-45,"snr":8,"len":120}\n
  *
@@ -36,14 +36,27 @@
 #include "config.h"
 
 // ============================================================
-// Host serial interface — USB for B4 (bench)
+// Host serial interface — RS485 upstream to RPi5 via hub
 // ============================================================
-#define HOST       Serial
-#define HOST_BAUD  USB_BAUD
+HardwareSerial HostRS485(2);  // UART2
 
 void hostSendJson(JsonDocument &doc) {
-    serializeJson(doc, HOST);
-    HOST.println();
+    digitalWrite(UP_DE_PIN, HIGH);
+    delayMicroseconds(100);
+    serializeJson(doc, HostRS485);
+    HostRS485.println();
+    HostRS485.flush();
+    delayMicroseconds(100);
+    digitalWrite(UP_DE_PIN, LOW);
+}
+
+void hostPrintln(const char *msg) {
+    digitalWrite(UP_DE_PIN, HIGH);
+    delayMicroseconds(100);
+    HostRS485.println(msg);
+    HostRS485.flush();
+    delayMicroseconds(100);
+    digitalWrite(UP_DE_PIN, LOW);
 }
 
 // ============================================================
@@ -159,7 +172,6 @@ void sendFragAck(uint8_t seq, uint8_t fragIdx) {
 
 // ============================================================
 // Wait for ACK with timeout — polls LoRa RX
-// Also handles any incoming data/frag packets during wait
 // ============================================================
 void handleIncomingPacket(uint8_t *buf, uint8_t len, int8_t rssi, int8_t snr);
 
@@ -196,7 +208,6 @@ bool waitForAck(uint8_t expectedSeq, bool isFrag, uint8_t fragIdx) {
 
 // ============================================================
 // Send data with ACK+retry (single packet)
-// Returns true if ACKed
 // ============================================================
 bool sendSingleWithAck(uint8_t seq, const uint8_t *data, uint16_t len) {
     uint8_t pkt[MAX_LORA_PKT];
@@ -214,7 +225,6 @@ bool sendSingleWithAck(uint8_t seq, const uint8_t *data, uint16_t len) {
 
 // ============================================================
 // Send data with fragmentation + ACK+retry
-// Returns true if all fragments ACKed
 // ============================================================
 bool sendFragmented(uint8_t seq, const uint8_t *data, uint16_t totalLen,
                     uint8_t &failedFrag, int &totalRetries) {
@@ -273,7 +283,6 @@ void handleIncomingPacket(uint8_t *buf, uint8_t len, int8_t rssi, int8_t snr) {
 
     switch (type) {
     case PKT_DATA:
-        // Single complete message — ACK it and deliver
         sendAck(seq);
         if (len > 1) {
             deliverMessage(&buf[1], len - 1, rssi, snr);
@@ -281,30 +290,25 @@ void handleIncomingPacket(uint8_t *buf, uint8_t len, int8_t rssi, int8_t snr) {
         break;
 
     case PKT_FRAG: {
-        // Fragment — need at least 3 header bytes
-        if (len < 4) break;  // 3 header + at least 1 data byte
+        if (len < 4) break;
         uint8_t fragIdx   = buf[1];
         uint8_t fragTotal = buf[2];
 
         if (fragTotal == 0 || fragTotal > MAX_FRAGMENTS || fragIdx >= fragTotal) {
-            break;  // Invalid
+            break;
         }
 
-        // Send FRAG_ACK immediately
         sendFragAck(seq, fragIdx);
 
-        // Start new reassembly or continue existing
         if (!reasm.active || reasm.seq != seq) {
-            // New message — reset
             memset(&reasm, 0, sizeof(reasm));
             reasm.active = true;
             reasm.seq = seq;
             reasm.totalFrags = fragTotal;
         }
 
-        if (reasm.totalFrags != fragTotal) break;  // Mismatch
+        if (reasm.totalFrags != fragTotal) break;
 
-        // Store fragment if not already received
         if (!reasm.received[fragIdx]) {
             uint16_t dataLen = len - FRAG_HEADER_SIZE;
             uint16_t offset = fragIdx * MAX_FRAG_DATA;
@@ -319,9 +323,7 @@ void handleIncomingPacket(uint8_t *buf, uint8_t len, int8_t rssi, int8_t snr) {
         reasm.lastSnr = snr;
         reasm.lastFragTime = millis();
 
-        // Check if all fragments received
         if (reasm.receivedCount >= reasm.totalFrags) {
-            // Calculate total length
             uint16_t totalLen = 0;
             for (uint8_t i = 0; i < reasm.totalFrags; i++) {
                 totalLen += reasm.fragLen[i];
@@ -334,7 +336,6 @@ void handleIncomingPacket(uint8_t *buf, uint8_t len, int8_t rssi, int8_t snr) {
 
     case PKT_ACK:
     case PKT_FRAG_ACK:
-        // Stale ACK — ignore (handled in waitForAck)
         break;
     }
 }
@@ -361,7 +362,7 @@ void handleLoraSend(JsonDocument &cmd) {
         hostSendJson(doc);
         return;
     }
-    if (len > MAX_MSG_SIZE) {
+    if (len > (int)MAX_MSG_SIZE) {
         JsonDocument doc;
         doc["ok"] = false;
         doc["error"] = "payload_too_large";
@@ -373,7 +374,6 @@ void handleLoraSend(JsonDocument &cmd) {
     txSeq = (txSeq + 1) & PKT_SEQ_MASK;
 
     if (len <= MAX_SINGLE_DATA) {
-        // Single packet
         if (sendSingleWithAck(seq, msgBuf, len)) {
             txCount++;
             JsonDocument doc;
@@ -391,7 +391,6 @@ void handleLoraSend(JsonDocument &cmd) {
             hostSendJson(doc);
         }
     } else {
-        // Fragmented
         uint8_t failedFrag = 0;
         int totalRetries = 0;
         uint8_t numFrags = (len + MAX_FRAG_DATA - 1) / MAX_FRAG_DATA;
@@ -420,9 +419,10 @@ void handleStatus() {
     JsonDocument doc;
     doc["ok"] = true;
     JsonObject data = doc["data"].to<JsonObject>();
+    data["node_id"] = NODE_ID;
+    data["fw"] = FW_NAME;
+    data["ver"] = FW_VERSION;
     data["uptime_ms"] = millis();
-    data["fw"] = "B4-LinkMaster-LoRa";
-    data["ver"] = "2.0.0";
     data["freq_hz"] = LORA_FREQ_HZ;
     data["sf"] = LORA_SF;
     data["bw_khz"] = 125;
@@ -465,8 +465,10 @@ void processCommand(const String &line) {
 // Setup
 // ============================================================
 void setup() {
-    HOST.begin(HOST_BAUD);
-    while (!HOST) { delay(10); }
+    // Upstream RS485 (to RPi5 via hub)
+    pinMode(UP_DE_PIN, OUTPUT);
+    digitalWrite(UP_DE_PIN, LOW);
+    HostRS485.begin(UP_BAUD, SERIAL_8N1, UP_RX_PIN, UP_TX_PIN);
 
     SPI.begin();
 
@@ -486,16 +488,28 @@ void setup() {
 
     inputBuffer.reserve(512);
 
-    HOST.println("{\"ok\":true,\"data\":{\"fw\":\"B4-LinkMaster-LoRa\",\"ver\":\"2.0.0\",\"freq\":865,\"sf\":10}}");
+    // Small delay for RS485 bus to settle
+    delay(100);
+
+    // Announce ready
+    JsonDocument doc;
+    doc["ok"] = true;
+    JsonObject data = doc["data"].to<JsonObject>();
+    data["fw"] = FW_NAME;
+    data["ver"] = FW_VERSION;
+    data["node_id"] = NODE_ID;
+    data["freq"] = 865;
+    data["sf"] = LORA_SF;
+    hostSendJson(doc);
 }
 
 // ============================================================
 // Main loop
 // ============================================================
 void loop() {
-    // Check host serial for commands
-    while (HOST.available()) {
-        char c = HOST.read();
+    // Check upstream RS485 for commands from RPi5
+    while (HostRS485.available()) {
+        char c = HostRS485.read();
         if (c == '\n') {
             inputBuffer.trim();
             if (inputBuffer.length() > 0) {
@@ -522,7 +536,7 @@ void loop() {
         handleIncomingPacket(loraBuf, len, rssi, snr);
     }
 
-    // Reassembly timeout — discard stale partial messages
+    // Reassembly timeout
     if (reasm.active && (millis() - reasm.lastFragTime > REASM_TIMEOUT_MS)) {
         reasm.active = false;
     }

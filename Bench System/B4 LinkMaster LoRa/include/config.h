@@ -1,7 +1,7 @@
 /**
- * B4 LinkMaster LoRa — Configuration (Bench Side)
+ * B4 LinkMaster LoRa — Configuration (Bench Side, Node 14)
  *
- * USB Serial ↔ LoRa SX1262 bridge with fragmentation + ACK.
+ * Upstream RS485 (Hub Ch 5) ↔ LoRa SX1262 bridge with fragmentation + ACK.
  * 865 MHz ISM band (India), SF10, BW 125kHz.
  *
  * Copyright (c) 2026 A.C.M.I.S Technologies LLP. All rights reserved.
@@ -10,8 +10,17 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// --- USB Serial (to Bench RPi5) ---
-#define USB_BAUD 115200
+// --- Node identity ---
+#define NODE_ID       14
+#define FW_NAME       "B4-LinkMaster-LoRa"
+#define FW_VERSION    "3.0.0"
+
+// --- Upstream RS485 (to RPi5 via Hub Ch 5) ---
+#define UP_BAUD       115200
+#define UP_RX_PIN     16   // UART2 RX
+#define UP_TX_PIN     17   // UART2 TX
+#define UP_DE_PIN     13   // Driver Enable (HIGH = transmit)
+                           // NOTE: DE=13 (not 4) to avoid conflict with LORA_BUSY=4
 
 // --- SX1262 SPI Pins ---
 #define LORA_SS   5    // SPI CS / NSS

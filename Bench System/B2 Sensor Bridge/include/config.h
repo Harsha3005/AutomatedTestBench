@@ -1,48 +1,36 @@
 /**
- * B2 Bench Sensor Bridge — Configuration
+ * B2 Sensor Bridge — Configuration (Node 10)
  *
- * RS485 (Bus 1) + GPIO pin assignments.
- * Pin numbers are PROVISIONAL — update after hardware wiring.
+ * Upstream RS485 (Hub Ch 1) ↔ Downstream RS485 Modbus RTU.
+ * Downstream devices: EM (addr 1), Scale (addr 2), 4-20mA (addr 3).
+ *
+ * Copyright (c) 2026 A.C.M.I.S Technologies LLP. All rights reserved.
  */
 
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// --- USB Serial (to RPi5) ---
-#define USB_BAUD 115200
+// --- Node identity ---
+#define NODE_ID       10
+#define FW_NAME       "B2-Sensor-Bridge"
+#define FW_VERSION    "2.0.0"
 
-// --- RS485 Serial (Bus 1) ---
-#define RS485_BAUD 9600
-#define RS485_RX_PIN 16
-#define RS485_TX_PIN 17
-#define RS485_DE_PIN 4  // Driver Enable
+// --- Upstream RS485 (to RPi5 via Hub Ch 1) ---
+#define UP_BAUD       115200
+#define UP_RX_PIN     16   // UART2 RX
+#define UP_TX_PIN     17   // UART2 TX
+#define UP_DE_PIN     4    // Driver Enable (HIGH = transmit)
+
+// --- Downstream RS485 (to EM, Scale, 4-20mA) ---
+#define DN_BAUD       9600
+#define DN_RX_PIN     32   // UART1 RX
+#define DN_TX_PIN     33   // UART1 TX
+#define DN_DE_PIN     25   // Driver Enable (HIGH = transmit)
 
 // --- Modbus device addresses ---
-#define ADDR_EM    1   // Energy meter (F1)
-#define ADDR_SCALE 2   // Weighing scale (F2)
-#define ADDR_420MA 3   // 4-20mA module (F3, pressure/temp)
-#define ADDR_DUT   20  // Device Under Test
-
-// --- GPIO Outputs: Lane Ball Valves (active HIGH) ---
-#define PIN_BV_L1 25   // 1" lane
-#define PIN_BV_L2 26   // 3/4" lane
-#define PIN_BV_L3 27   // 1/2" lane
-
-// --- GPIO Outputs: Diverter Valve (dual-coil latching) ---
-#define PIN_DV1_COLLECT 32  // Pulse HIGH → COLLECT position
-#define PIN_DV1_BYPASS  33  // Pulse HIGH → BYPASS position
-#define DIVERTER_PULSE_MS 200
-
-// --- GPIO Outputs: Drain Solenoid ---
-#define PIN_SV_DRN 14  // Drain solenoid (active HIGH)
-
-// --- GPIO Outputs: Tower Light ---
-#define PIN_TOWER_R 12  // Red
-#define PIN_TOWER_Y 13  // Yellow
-#define PIN_TOWER_G 15  // Green
-
-// --- GPIO Inputs ---
-#define PIN_ESTOP_MON 34  // E-stop contactor aux (active LOW, INPUT_PULLUP)
+#define ADDR_EM    1   // EM flow meter (FT-01)
+#define ADDR_SCALE 2   // Weighing scale (WT-01)
+#define ADDR_420MA 3   // 4-20mA module (PT-01, PT-02, water temp)
 
 // --- Status LED ---
 #define LED_PIN 2
