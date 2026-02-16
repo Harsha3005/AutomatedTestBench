@@ -1,21 +1,32 @@
 /**
- * B4/L1 — LinkMaster LoRa Firmware
+ * B4 — LinkMaster LoRa Firmware (Bench Side)
  *
- * USB Serial ↔ LoRa SX1262 transparent bridge.
- * Acts as a dumb radio pipe — all ASP encryption/decryption
- * is handled on the RPi5/Lab PC side.
+ * USB Serial ↔ LoRa SX1262 bridge with fragmentation and ACK.
+ * Connects directly to Bench RPi5 via USB.
  *
- * Protocol (USB Serial, 115200, JSON lines):
+ * Transport protocol:
+ *   - Messages ≤254 bytes: sent as single DATA packet
+ *   - Messages >254 bytes: split into FRAG packets (≤252 bytes each)
+ *   - Every packet gets ACKed by the receiver
+ *   - Retry up to 3 times on ACK timeout (3 seconds)
+ *   - Receiver reassembles fragments before forwarding
+ *
+ * Packet format (over LoRa air):
+ *   DATA:     [0x00|seq:6] [payload 1-254 bytes]
+ *   FRAG:     [0x40|seq:6] [frag_idx] [frag_total] [payload 1-252 bytes]
+ *   ACK:      [0x80|seq:6]
+ *   FRAG_ACK: [0xC0|seq:6] [frag_idx]
+ *
+ * JSON protocol (USB Serial, 115200):
  *   TX: {"cmd":"LORA_SEND","data":"<base64>"}\n
- *       → {"ok":true}\n
+ *       → {"ok":true,"data":{"seq":5,"frags":1,"retries":0}}\n
+ *       → {"ok":false,"error":"no_ack","seq":5,"frag":0}\n
  *
- *   RX: (async event from radio)
- *       → {"event":"LORA_RX","data":"<base64>","rssi":-45,"snr":8}\n
- *
- *   Status: {"cmd":"STATUS"}\n
- *       → {"ok":true,"data":{"uptime_ms":...,"freq_hz":865000000,"sf":10}}\n
+ *   RX: {"event":"LORA_RX","data":"<base64>","rssi":-45,"snr":8,"len":120}\n
  *
  * LoRa: SX1262 (RA-01SH), 865 MHz, SF10, BW 125kHz, CR 4/5, +22 dBm
+ *
+ * Copyright (c) 2026 A.C.M.I.S Technologies LLP. All rights reserved.
  */
 
 #include <Arduino.h>
@@ -24,7 +35,20 @@
 #include <Ra01S.h>
 #include "config.h"
 
-// --- Base64 lookup tables ---
+// ============================================================
+// Host serial interface — USB for B4 (bench)
+// ============================================================
+#define HOST       Serial
+#define HOST_BAUD  USB_BAUD
+
+void hostSendJson(JsonDocument &doc) {
+    serializeJson(doc, HOST);
+    HOST.println();
+}
+
+// ============================================================
+// Base64 encode / decode
+// ============================================================
 static const char b64_chars[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -42,12 +66,10 @@ static const uint8_t b64_decode_table[128] = {
 String base64_encode(const uint8_t *data, size_t len) {
     String result;
     result.reserve(((len + 2) / 3) * 4);
-
     for (size_t i = 0; i < len; i += 3) {
         uint32_t n = ((uint32_t)data[i]) << 16;
         if (i + 1 < len) n |= ((uint32_t)data[i + 1]) << 8;
         if (i + 2 < len) n |= data[i + 2];
-
         result += b64_chars[(n >> 18) & 0x3F];
         result += b64_chars[(n >> 12) & 0x3F];
         result += (i + 1 < len) ? b64_chars[(n >> 6) & 0x3F] : '=';
@@ -59,21 +81,17 @@ String base64_encode(const uint8_t *data, size_t len) {
 int base64_decode(const char *input, uint8_t *output, size_t maxLen) {
     size_t inLen = strlen(input);
     if (inLen % 4 != 0) return -1;
-
     size_t outIdx = 0;
     for (size_t i = 0; i < inLen; i += 4) {
         uint32_t n = 0;
         for (int j = 0; j < 4; j++) {
             char c = input[i + j];
-            if (c == '=') {
-                n <<= 6;
-            } else if (c >= 0 && c < 128) {
+            if (c == '=') { n <<= 6; }
+            else if (c >= 0 && c < 128) {
                 uint8_t val = b64_decode_table[(uint8_t)c];
                 if (val == 255) return -1;
                 n = (n << 6) | val;
-            } else {
-                return -1;
-            }
+            } else { return -1; }
         }
         if (outIdx < maxLen) output[outIdx++] = (n >> 16) & 0xFF;
         if (input[i + 2] != '=' && outIdx < maxLen) output[outIdx++] = (n >> 8) & 0xFF;
@@ -82,56 +100,320 @@ int base64_decode(const char *input, uint8_t *output, size_t maxLen) {
     return outIdx;
 }
 
-// --- Globals ---
+// ============================================================
+// Globals
+// ============================================================
 SX126x lora(LORA_SS, LORA_RST, LORA_BUSY);
 String inputBuffer;
-uint8_t rxBuf[RX_BUF_SIZE];
+uint8_t loraBuf[RX_BUF_SIZE];
+uint8_t txSeq = 0;
 unsigned long txCount = 0;
 unsigned long rxCount = 0;
+unsigned long ackCount = 0;
+unsigned long retryCount = 0;
 
-// --- JSON responses ---
-void sendOk() {
-    Serial.println("{\"ok\":true}");
+// Reassembly state for incoming fragmented messages
+struct Reassembly {
+    bool     active;
+    uint8_t  seq;
+    uint8_t  totalFrags;
+    uint8_t  receivedCount;
+    bool     received[MAX_FRAGMENTS];
+    uint16_t fragLen[MAX_FRAGMENTS];
+    uint8_t  data[MAX_MSG_SIZE];
+    int8_t   lastRssi;
+    int8_t   lastSnr;
+    unsigned long lastFragTime;
+} reasm = {0};
+
+// ACK signal for TX wait loop
+volatile bool     ackReceived = false;
+volatile uint8_t  ackSeq = 0;
+volatile uint8_t  ackFragIdx = 0;
+volatile bool     ackIsFrag = false;
+
+// ============================================================
+// Low-level LoRa send (raw bytes, no protocol)
+// ============================================================
+bool loraSendRaw(const uint8_t *data, uint8_t len) {
+    bool ok = lora.Send((uint8_t *)data, len, SX126x_TXMODE_SYNC);
+    lora.ReceiveMode();
+    return ok;
 }
 
-void sendError(const char *msg) {
+// ============================================================
+// Send ACK / FRAG_ACK
+// ============================================================
+void sendAck(uint8_t seq) {
+    uint8_t pkt[1] = { (uint8_t)(PKT_ACK | (seq & PKT_SEQ_MASK)) };
+    loraSendRaw(pkt, 1);
+}
+
+void sendFragAck(uint8_t seq, uint8_t fragIdx) {
+    uint8_t pkt[2] = {
+        (uint8_t)(PKT_FRAG_ACK | (seq & PKT_SEQ_MASK)),
+        fragIdx
+    };
+    loraSendRaw(pkt, 2);
+}
+
+// ============================================================
+// Wait for ACK with timeout — polls LoRa RX
+// Also handles any incoming data/frag packets during wait
+// ============================================================
+void handleIncomingPacket(uint8_t *buf, uint8_t len, int8_t rssi, int8_t snr);
+
+bool waitForAck(uint8_t expectedSeq, bool isFrag, uint8_t fragIdx) {
+    ackReceived = false;
+    unsigned long start = millis();
+
+    while (millis() - start < ACK_TIMEOUT_MS) {
+        uint8_t len = lora.Receive(loraBuf, sizeof(loraBuf));
+        if (len > 0) {
+            int8_t rssi, snr;
+            lora.GetPacketStatus(&rssi, &snr);
+
+            uint8_t type = loraBuf[0] & PKT_TYPE_MASK;
+            uint8_t seq  = loraBuf[0] & PKT_SEQ_MASK;
+
+            if (type == PKT_ACK && !isFrag && seq == expectedSeq) {
+                ackCount++;
+                return true;
+            }
+            if (type == PKT_FRAG_ACK && isFrag && seq == expectedSeq
+                && len >= 2 && loraBuf[1] == fragIdx) {
+                ackCount++;
+                return true;
+            }
+
+            // Not our ACK — could be incoming data from other side
+            handleIncomingPacket(loraBuf, len, rssi, snr);
+        }
+        delay(1);
+    }
+    return false;  // Timeout
+}
+
+// ============================================================
+// Send data with ACK+retry (single packet)
+// Returns true if ACKed
+// ============================================================
+bool sendSingleWithAck(uint8_t seq, const uint8_t *data, uint16_t len) {
+    uint8_t pkt[MAX_LORA_PKT];
+    pkt[0] = PKT_DATA | (seq & PKT_SEQ_MASK);
+    memcpy(&pkt[1], data, len);
+    uint8_t pktLen = 1 + len;
+
+    for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) retryCount++;
+        if (!loraSendRaw(pkt, pktLen)) continue;
+        if (waitForAck(seq, false, 0)) return true;
+    }
+    return false;
+}
+
+// ============================================================
+// Send data with fragmentation + ACK+retry
+// Returns true if all fragments ACKed
+// ============================================================
+bool sendFragmented(uint8_t seq, const uint8_t *data, uint16_t totalLen,
+                    uint8_t &failedFrag, int &totalRetries) {
+    uint8_t numFrags = (totalLen + MAX_FRAG_DATA - 1) / MAX_FRAG_DATA;
+    if (numFrags > MAX_FRAGMENTS) return false;
+
+    totalRetries = 0;
+    uint8_t pkt[MAX_LORA_PKT];
+
+    for (uint8_t f = 0; f < numFrags; f++) {
+        uint16_t offset = f * MAX_FRAG_DATA;
+        uint16_t fragLen = totalLen - offset;
+        if (fragLen > MAX_FRAG_DATA) fragLen = MAX_FRAG_DATA;
+
+        pkt[0] = PKT_FRAG | (seq & PKT_SEQ_MASK);
+        pkt[1] = f;
+        pkt[2] = numFrags;
+        memcpy(&pkt[3], &data[offset], fragLen);
+        uint8_t pktLen = 3 + fragLen;
+
+        bool acked = false;
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            if (attempt > 0) { retryCount++; totalRetries++; }
+            if (!loraSendRaw(pkt, pktLen)) continue;
+            if (waitForAck(seq, true, f)) { acked = true; break; }
+        }
+        if (!acked) {
+            failedFrag = f;
+            return false;
+        }
+    }
+    return true;
+}
+
+// ============================================================
+// Handle incoming LoRa packet (DATA, FRAG, or unexpected ACK)
+// ============================================================
+void deliverMessage(const uint8_t *data, uint16_t len, int8_t rssi, int8_t snr) {
+    rxCount++;
+    String b64 = base64_encode(data, len);
+
     JsonDocument doc;
-    doc["ok"] = false;
-    doc["error"] = msg;
-    serializeJson(doc, Serial);
-    Serial.println();
+    doc["event"] = "LORA_RX";
+    doc["data"] = b64;
+    doc["rssi"] = rssi;
+    doc["snr"] = snr;
+    doc["len"] = len;
+    hostSendJson(doc);
 }
 
-// --- Command handlers ---
+void handleIncomingPacket(uint8_t *buf, uint8_t len, int8_t rssi, int8_t snr) {
+    if (len < 1) return;
 
+    uint8_t type = buf[0] & PKT_TYPE_MASK;
+    uint8_t seq  = buf[0] & PKT_SEQ_MASK;
+
+    switch (type) {
+    case PKT_DATA:
+        // Single complete message — ACK it and deliver
+        sendAck(seq);
+        if (len > 1) {
+            deliverMessage(&buf[1], len - 1, rssi, snr);
+        }
+        break;
+
+    case PKT_FRAG: {
+        // Fragment — need at least 3 header bytes
+        if (len < 4) break;  // 3 header + at least 1 data byte
+        uint8_t fragIdx   = buf[1];
+        uint8_t fragTotal = buf[2];
+
+        if (fragTotal == 0 || fragTotal > MAX_FRAGMENTS || fragIdx >= fragTotal) {
+            break;  // Invalid
+        }
+
+        // Send FRAG_ACK immediately
+        sendFragAck(seq, fragIdx);
+
+        // Start new reassembly or continue existing
+        if (!reasm.active || reasm.seq != seq) {
+            // New message — reset
+            memset(&reasm, 0, sizeof(reasm));
+            reasm.active = true;
+            reasm.seq = seq;
+            reasm.totalFrags = fragTotal;
+        }
+
+        if (reasm.totalFrags != fragTotal) break;  // Mismatch
+
+        // Store fragment if not already received
+        if (!reasm.received[fragIdx]) {
+            uint16_t dataLen = len - FRAG_HEADER_SIZE;
+            uint16_t offset = fragIdx * MAX_FRAG_DATA;
+            if (offset + dataLen <= MAX_MSG_SIZE) {
+                memcpy(&reasm.data[offset], &buf[3], dataLen);
+                reasm.fragLen[fragIdx] = dataLen;
+                reasm.received[fragIdx] = true;
+                reasm.receivedCount++;
+            }
+        }
+        reasm.lastRssi = rssi;
+        reasm.lastSnr = snr;
+        reasm.lastFragTime = millis();
+
+        // Check if all fragments received
+        if (reasm.receivedCount >= reasm.totalFrags) {
+            // Calculate total length
+            uint16_t totalLen = 0;
+            for (uint8_t i = 0; i < reasm.totalFrags; i++) {
+                totalLen += reasm.fragLen[i];
+            }
+            deliverMessage(reasm.data, totalLen, reasm.lastRssi, reasm.lastSnr);
+            reasm.active = false;
+        }
+        break;
+    }
+
+    case PKT_ACK:
+    case PKT_FRAG_ACK:
+        // Stale ACK — ignore (handled in waitForAck)
+        break;
+    }
+}
+
+// ============================================================
+// Command handlers
+// ============================================================
 void handleLoraSend(JsonDocument &cmd) {
     const char *b64data = cmd["data"] | "";
     if (strlen(b64data) == 0) {
-        sendError("missing_data");
+        JsonDocument doc;
+        doc["ok"] = false;
+        doc["error"] = "missing_data";
+        hostSendJson(doc);
         return;
     }
 
-    uint8_t txBuf[RX_BUF_SIZE];
-    int len = base64_decode(b64data, txBuf, sizeof(txBuf));
+    uint8_t msgBuf[MAX_MSG_SIZE];
+    int len = base64_decode(b64data, msgBuf, sizeof(msgBuf));
     if (len < 0) {
-        sendError("base64_decode_error");
+        JsonDocument doc;
+        doc["ok"] = false;
+        doc["error"] = "base64_decode_error";
+        hostSendJson(doc);
         return;
     }
-    if (len > 255) {
-        sendError("payload_too_large");
+    if (len > MAX_MSG_SIZE) {
+        JsonDocument doc;
+        doc["ok"] = false;
+        doc["error"] = "payload_too_large";
+        hostSendJson(doc);
         return;
     }
 
-    bool ok = lora.Send(txBuf, (uint8_t)len, SX126x_TXMODE_SYNC);
-    if (ok) {
-        txCount++;
-        sendOk();
+    uint8_t seq = txSeq;
+    txSeq = (txSeq + 1) & PKT_SEQ_MASK;
+
+    if (len <= MAX_SINGLE_DATA) {
+        // Single packet
+        if (sendSingleWithAck(seq, msgBuf, len)) {
+            txCount++;
+            JsonDocument doc;
+            doc["ok"] = true;
+            JsonObject data = doc["data"].to<JsonObject>();
+            data["seq"] = seq;
+            data["frags"] = 1;
+            data["retries"] = 0;
+            hostSendJson(doc);
+        } else {
+            JsonDocument doc;
+            doc["ok"] = false;
+            doc["error"] = "no_ack";
+            doc["seq"] = seq;
+            hostSendJson(doc);
+        }
     } else {
-        sendError("tx_failed");
-    }
+        // Fragmented
+        uint8_t failedFrag = 0;
+        int totalRetries = 0;
+        uint8_t numFrags = (len + MAX_FRAG_DATA - 1) / MAX_FRAG_DATA;
 
-    // Return to receive mode after TX
-    lora.ReceiveMode();
+        if (sendFragmented(seq, msgBuf, len, failedFrag, totalRetries)) {
+            txCount++;
+            JsonDocument doc;
+            doc["ok"] = true;
+            JsonObject data = doc["data"].to<JsonObject>();
+            data["seq"] = seq;
+            data["frags"] = numFrags;
+            data["retries"] = totalRetries;
+            hostSendJson(doc);
+        } else {
+            JsonDocument doc;
+            doc["ok"] = false;
+            doc["error"] = "no_ack";
+            doc["seq"] = seq;
+            doc["frag"] = failedFrag;
+            hostSendJson(doc);
+        }
+    }
 }
 
 void handleStatus() {
@@ -139,40 +421,52 @@ void handleStatus() {
     doc["ok"] = true;
     JsonObject data = doc["data"].to<JsonObject>();
     data["uptime_ms"] = millis();
+    data["fw"] = "B4-LinkMaster-LoRa";
+    data["ver"] = "2.0.0";
     data["freq_hz"] = LORA_FREQ_HZ;
     data["sf"] = LORA_SF;
     data["bw_khz"] = 125;
     data["tx_power"] = LORA_TX_POWER;
     data["tx_count"] = txCount;
     data["rx_count"] = rxCount;
-    serializeJson(doc, Serial);
-    Serial.println();
+    data["ack_count"] = ackCount;
+    data["retry_count"] = retryCount;
+    hostSendJson(doc);
 }
 
-// --- Process command ---
+// ============================================================
+// Process command from host
+// ============================================================
 void processCommand(const String &line) {
     JsonDocument cmd;
     DeserializationError err = deserializeJson(cmd, line);
     if (err) {
-        sendError("json_parse_error");
+        JsonDocument doc;
+        doc["ok"] = false;
+        doc["error"] = "json_parse_error";
+        hostSendJson(doc);
         return;
     }
 
     const char *cmdStr = cmd["cmd"] | "";
-
     if (strcmp(cmdStr, "LORA_SEND") == 0) {
         handleLoraSend(cmd);
     } else if (strcmp(cmdStr, "STATUS") == 0) {
         handleStatus();
     } else {
-        sendError("unknown_command");
+        JsonDocument doc;
+        doc["ok"] = false;
+        doc["error"] = "unknown_command";
+        hostSendJson(doc);
     }
 }
 
-// --- Setup ---
+// ============================================================
+// Setup
+// ============================================================
 void setup() {
-    Serial.begin(USB_BAUD);
-    while (!Serial) { delay(10); }
+    HOST.begin(HOST_BAUD);
+    while (!HOST) { delay(10); }
 
     SPI.begin();
 
@@ -182,33 +476,26 @@ void setup() {
         doc["ok"] = false;
         doc["error"] = "lora_init_failed";
         doc["code"] = ret;
-        serializeJson(doc, Serial);
-        Serial.println();
-        while (1) { delay(1000); }  // Halt on init failure
+        hostSendJson(doc);
+        while (1) { delay(1000); }
     }
 
-    lora.LoRaConfig(
-        LORA_SF,
-        LORA_BW,
-        LORA_CR,
-        LORA_PREAMBLE,
-        LORA_PAYLOAD_LEN,
-        LORA_CRC,
-        LORA_INVERT_IQ
-    );
-
+    lora.LoRaConfig(LORA_SF, LORA_BW, LORA_CR, LORA_PREAMBLE,
+                    LORA_PAYLOAD_LEN, LORA_CRC, LORA_INVERT_IQ);
     lora.ReceiveMode();
 
     inputBuffer.reserve(512);
 
-    Serial.println("{\"ok\":true,\"data\":{\"fw\":\"LinkMaster-LoRa\",\"ver\":\"1.0.0\",\"freq\":865}}");
+    HOST.println("{\"ok\":true,\"data\":{\"fw\":\"B4-LinkMaster-LoRa\",\"ver\":\"2.0.0\",\"freq\":865,\"sf\":10}}");
 }
 
-// --- Main loop ---
+// ============================================================
+// Main loop
+// ============================================================
 void loop() {
-    // Check USB Serial for commands
-    while (Serial.available()) {
-        char c = Serial.read();
+    // Check host serial for commands
+    while (HOST.available()) {
+        char c = HOST.read();
         if (c == '\n') {
             inputBuffer.trim();
             if (inputBuffer.length() > 0) {
@@ -219,27 +506,24 @@ void loop() {
             inputBuffer += c;
             if (inputBuffer.length() > 1024) {
                 inputBuffer = "";
-                sendError("input_too_long");
+                JsonDocument doc;
+                doc["ok"] = false;
+                doc["error"] = "input_too_long";
+                hostSendJson(doc);
             }
         }
     }
 
     // Check for incoming LoRa packets
-    uint8_t len = lora.Receive(rxBuf, sizeof(rxBuf));
+    uint8_t len = lora.Receive(loraBuf, sizeof(loraBuf));
     if (len > 0) {
-        rxCount++;
         int8_t rssi, snr;
         lora.GetPacketStatus(&rssi, &snr);
+        handleIncomingPacket(loraBuf, len, rssi, snr);
+    }
 
-        String b64 = base64_encode(rxBuf, len);
-
-        JsonDocument doc;
-        doc["event"] = "LORA_RX";
-        doc["data"] = b64;
-        doc["rssi"] = rssi;
-        doc["snr"] = snr;
-        doc["len"] = len;
-        serializeJson(doc, Serial);
-        Serial.println();
+    // Reassembly timeout — discard stale partial messages
+    if (reasm.active && (millis() - reasm.lastFragTime > REASM_TIMEOUT_MS)) {
+        reasm.active = false;
     }
 }
