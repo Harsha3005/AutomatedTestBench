@@ -1,7 +1,7 @@
 /**
- * L1 LinkMaster LoRa — Configuration (Lab Side)
+ * L1 LinkMaster LoRa — Configuration (Lab Side, Node 15)
  *
- * RS485 ↔ LoRa SX1262 bridge with fragmentation + ACK.
+ * Upstream RS485 (to L2 Bridge) ↔ LoRa SX1262 bridge with fragmentation + ACK.
  * 865 MHz ISM band (India), SF10, BW 125kHz.
  *
  * Copyright (c) 2026 A.C.M.I.S Technologies LLP. All rights reserved.
@@ -10,14 +10,16 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// --- RS485 Serial (to L2 RS485 Bridge) ---
-#define RS485_BAUD 115200
-#define RS485_RX_PIN 16
-#define RS485_TX_PIN 17
-#define RS485_DE_PIN 15     // Driver Enable (HIGH = transmit, LOW = receive)
+// --- Node identity ---
+#define NODE_ID       15
+#define FW_NAME       "L1-LinkMaster-LoRa"
+#define FW_VERSION    "3.0.0"
 
-// --- USB Serial (debug only) ---
-#define USB_BAUD 115200
+// --- Upstream RS485 (to L2 RS485 Bridge) ---
+#define UP_BAUD       115200
+#define UP_RX_PIN     16   // UART2 RX
+#define UP_TX_PIN     17   // UART2 TX
+#define UP_DE_PIN     15   // Driver Enable (HIGH = transmit)
 
 // --- SX1262 SPI Pins ---
 #define LORA_SS   5    // SPI CS / NSS

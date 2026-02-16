@@ -1,5 +1,5 @@
 /**
- * L2 — Lab RS485 Transparent Bridge Firmware
+ * L2 — RS485 Bridge Firmware (Node 16)
  *
  * USB Serial ↔ RS485 transparent byte-level bridge.
  * Sits between Lab Server (USB) and L1 LinkMaster (RS485).
@@ -42,6 +42,18 @@ void setup() {
     // Status LED
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, LOW);
+
+    // Small delay for RS485 bus to settle
+    delay(100);
+
+    // Announce ready on USB (Lab Server can detect L2 is alive)
+    Serial.print("{\"ok\":true,\"data\":{\"fw\":\"");
+    Serial.print(FW_NAME);
+    Serial.print("\",\"ver\":\"");
+    Serial.print(FW_VERSION);
+    Serial.print("\",\"node_id\":");
+    Serial.print(NODE_ID);
+    Serial.println("}}");
 }
 
 // --- Main loop ---

@@ -1,9 +1,9 @@
 /**
- * L1 — LinkMaster LoRa Firmware (Lab Side)
+ * L1 — LinkMaster LoRa Firmware (Lab Side, Node 15)
  *
- * RS485 ↔ LoRa SX1262 bridge with fragmentation and ACK.
- * Receives JSON commands from L2 RS485 Bridge, transmits via LoRa.
- * Receives LoRa packets, forwards as JSON events via RS485 to L2.
+ * Upstream RS485 (to L2 Bridge) ↔ LoRa SX1262 bridge with fragmentation and ACK.
+ * Receives JSON commands from Lab Server (via L2), transmits via LoRa.
+ * Receives LoRa packets, forwards as JSON events via RS485 to Lab Server.
  * Acts as a dumb radio pipe — all ASP encryption/decryption
  * is handled on the Lab Server side.
  *
@@ -12,8 +12,8 @@
  *   Lab Server <-USB--- L2 <-RS485--- L1 <-LoRa RF--- B4 (Bench)
  *
  * Transport protocol:
- *   - Messages ≤254 bytes: sent as single DATA packet
- *   - Messages >254 bytes: split into FRAG packets (≤252 bytes each)
+ *   - Messages <=254 bytes: sent as single DATA packet
+ *   - Messages >254 bytes: split into FRAG packets (<=252 bytes each)
  *   - Every packet gets ACKed by the receiver
  *   - Retry up to 3 times on ACK timeout (3 seconds)
  *   - Receiver reassembles fragments before forwarding
@@ -24,10 +24,10 @@
  *   ACK:      [0x80|seq:6]
  *   FRAG_ACK: [0xC0|seq:6] [frag_idx]
  *
- * JSON protocol (RS485, 115200, JSON lines):
+ * JSON protocol (RS485 upstream, 115200):
  *   TX: {"cmd":"LORA_SEND","data":"<base64>"}\n
- *       → {"ok":true,"data":{"seq":5,"frags":1,"retries":0}}\n
- *       → {"ok":false,"error":"no_ack","seq":5,"frag":0}\n
+ *       -> {"ok":true,"data":{"seq":5,"frags":1,"retries":0}}\n
+ *       -> {"ok":false,"error":"no_ack","seq":5,"frag":0}\n
  *
  *   RX: {"event":"LORA_RX","data":"<base64>","rssi":-45,"snr":8,"len":120}\n
  *
@@ -43,27 +43,27 @@
 #include "config.h"
 
 // ============================================================
-// Host serial interface — RS485 for L1 (lab side)
+// Host serial interface — RS485 upstream to L2 Bridge
 // ============================================================
-HardwareSerial RS485(2);
+HardwareSerial HostRS485(2);  // UART2
 
 void hostSendJson(JsonDocument &doc) {
-    digitalWrite(RS485_DE_PIN, HIGH);
-    delayMicroseconds(50);
-    serializeJson(doc, RS485);
-    RS485.println();
-    RS485.flush();
-    delayMicroseconds(50);
-    digitalWrite(RS485_DE_PIN, LOW);
+    digitalWrite(UP_DE_PIN, HIGH);
+    delayMicroseconds(100);
+    serializeJson(doc, HostRS485);
+    HostRS485.println();
+    HostRS485.flush();
+    delayMicroseconds(100);
+    digitalWrite(UP_DE_PIN, LOW);
 }
 
-void hostPrintln(const char *str) {
-    digitalWrite(RS485_DE_PIN, HIGH);
-    delayMicroseconds(50);
-    RS485.println(str);
-    RS485.flush();
-    delayMicroseconds(50);
-    digitalWrite(RS485_DE_PIN, LOW);
+void hostPrintln(const char *msg) {
+    digitalWrite(UP_DE_PIN, HIGH);
+    delayMicroseconds(100);
+    HostRS485.println(msg);
+    HostRS485.flush();
+    delayMicroseconds(100);
+    digitalWrite(UP_DE_PIN, LOW);
 }
 
 // ============================================================
@@ -372,7 +372,7 @@ void handleLoraSend(JsonDocument &cmd) {
         hostSendJson(doc);
         return;
     }
-    if (len > MAX_MSG_SIZE) {
+    if (len > (int)MAX_MSG_SIZE) {
         JsonDocument doc;
         doc["ok"] = false;
         doc["error"] = "payload_too_large";
@@ -431,9 +431,10 @@ void handleStatus() {
     JsonDocument doc;
     doc["ok"] = true;
     JsonObject data = doc["data"].to<JsonObject>();
+    data["node_id"] = NODE_ID;
+    data["fw"] = FW_NAME;
+    data["ver"] = FW_VERSION;
     data["uptime_ms"] = millis();
-    data["fw"] = "L1-LinkMaster-LoRa";
-    data["ver"] = "2.0.0";
     data["freq_hz"] = LORA_FREQ_HZ;
     data["sf"] = LORA_SF;
     data["bw_khz"] = 125;
@@ -446,7 +447,7 @@ void handleStatus() {
 }
 
 // ============================================================
-// Process command from host (via RS485)
+// Process command from host (via L2 Bridge → RS485)
 // ============================================================
 void processCommand(const String &line) {
     JsonDocument cmd;
@@ -476,13 +477,10 @@ void processCommand(const String &line) {
 // Setup
 // ============================================================
 void setup() {
-    // USB Serial for debug output only
-    Serial.begin(USB_BAUD);
-
-    // RS485 to L2 Bridge — this is the command interface
-    pinMode(RS485_DE_PIN, OUTPUT);
-    digitalWrite(RS485_DE_PIN, LOW);  // Start in receive mode
-    RS485.begin(RS485_BAUD, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
+    // Upstream RS485 (to L2 Bridge → Lab Server)
+    pinMode(UP_DE_PIN, OUTPUT);
+    digitalWrite(UP_DE_PIN, LOW);
+    HostRS485.begin(UP_BAUD, SERIAL_8N1, UP_RX_PIN, UP_TX_PIN);
 
     SPI.begin();
 
@@ -493,7 +491,6 @@ void setup() {
         doc["error"] = "lora_init_failed";
         doc["code"] = ret;
         hostSendJson(doc);
-        Serial.println("[ERROR] LoRa init failed!");
         while (1) { delay(1000); }
     }
 
@@ -503,18 +500,28 @@ void setup() {
 
     inputBuffer.reserve(512);
 
-    // Boot message over RS485 to Lab Server
-    hostPrintln("{\"ok\":true,\"data\":{\"fw\":\"L1-LinkMaster-LoRa\",\"ver\":\"2.0.0\",\"freq\":865,\"sf\":10}}");
-    Serial.println("[INIT] L1 LinkMaster LoRa ready (RS485 + LoRa 865MHz SF10)");
+    // Small delay for RS485 bus to settle
+    delay(100);
+
+    // Announce ready
+    JsonDocument doc;
+    doc["ok"] = true;
+    JsonObject data = doc["data"].to<JsonObject>();
+    data["fw"] = FW_NAME;
+    data["ver"] = FW_VERSION;
+    data["node_id"] = NODE_ID;
+    data["freq"] = 865;
+    data["sf"] = LORA_SF;
+    hostSendJson(doc);
 }
 
 // ============================================================
 // Main loop
 // ============================================================
 void loop() {
-    // Check RS485 for commands from L2 Bridge / Lab Server
-    while (RS485.available()) {
-        char c = RS485.read();
+    // Check upstream RS485 for commands from Lab Server (via L2)
+    while (HostRS485.available()) {
+        char c = HostRS485.read();
         if (c == '\n') {
             inputBuffer.trim();
             if (inputBuffer.length() > 0) {

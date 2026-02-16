@@ -1,21 +1,28 @@
 /**
- * L2 Lab RS485 Bridge — Configuration
+ * L2 RS485 Bridge — Configuration (Node 16)
  *
- * Transparent serial bridge: USB ↔ RS485.
- * Forwards bytes bidirectionally between Lab Server and L1 LinkMaster.
+ * Transparent serial bridge: USB (Lab Server) ↔ RS485 (L1 LinkMaster).
+ * Forwards bytes bidirectionally. No protocol parsing.
+ *
+ * Copyright (c) 2026 A.C.M.I.S Technologies LLP. All rights reserved.
  */
 
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// --- Node identity ---
+#define NODE_ID       16
+#define FW_NAME       "L2-RS485-Bridge"
+#define FW_VERSION    "2.0.0"
+
 // --- USB Serial (to Lab Server) ---
 #define USB_BAUD 115200
 
 // --- RS485 Serial (to L1 LinkMaster) ---
-#define RS485_BAUD 115200   // Must match L1 LinkMaster RS485 baud
-#define RS485_RX_PIN 16
-#define RS485_TX_PIN 17
-#define RS485_DE_PIN 4      // Driver Enable (HIGH = transmit, LOW = receive)
+#define RS485_BAUD    115200   // Must match L1 upstream baud
+#define RS485_RX_PIN  16       // UART2 RX
+#define RS485_TX_PIN  17       // UART2 TX
+#define RS485_DE_PIN  4        // Driver Enable (HIGH = transmit, LOW = receive)
 
 // --- Status LED ---
 #define LED_PIN 2
