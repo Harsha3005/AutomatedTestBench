@@ -36,12 +36,12 @@ ISO 4064 compliant calibration of DN15/DN20/DN25 water meters using the gravimet
 ║  │                        │ USB Serial                        │            ║
 ║  │            ┌───────────┴────────────┐                      │            ║
 ║  │            │ L2: ESP32 RS485 Bridge  │  Indoor              │            ║
-║  │            │ USB ↔ RS485 transparent │                      │            ║
+║  │            │ (Node 16) USB↔RS485    │                      │            ║
 ║  │            └───────────┬────────────┘                      │            ║
 ║  │                        │ RS485                              │            ║
 ║  │            ┌───────────┴────────────┐                      │            ║
 ║  │            │ L1: ESP32 + RA-01SH    │  Rooftop              │            ║
-║  │            │ Lab LinkMaster          │                      │            ║
+║  │            │ (Node 15) LinkMaster   │                      │            ║
 ║  │            │ LoRa ↔ RS485 gateway   │                      │            ║
 ║  │            └───────────┬────────────┘                      │            ║
 ║  └────────────────────────┼────────────────────────────────────┘           ║
@@ -124,23 +124,23 @@ The Bench RPi5 (B1) connects to all 5 ESP32 nodes via a **single USB cable** to 
 
 Each channel is point-to-point (one RPi5 port ↔ one ESP32). No addressing
 needed on the upstream link — the RPi5 identifies each node by its serial port.
-Node IDs (10–14) are included in STATUS responses for verification.
+Node IDs (10–14 bench, 15–16 lab) are included in STATUS responses for verification.
 
 ---
 
 ## 3. Unit Reference
 
-| ID | Node ID | Unit | Location | Role |
-|----|---------|------|----------|------|
-| L1 | — | Lab LinkMaster | Lab rooftop | ESP32 + RA-01SH (SX1262, 865 MHz). LoRa ↔ RS485 gateway. |
-| L2 | — | Lab RS485 Bridge | Lab indoor | ESP32. USB ↔ RS485 transparent byte bridge to L1. |
-| L3 | — | Lab RPi5 | Lab indoor | Django web portal. Accessed via LAN by lab staff. |
-| B1 | — | Bench RPi5 + Touch LCD | Bench indoor | Main controller. Django + test engine. USB → Waveshare 8-CH RS485 Hub → 5 ESP32 nodes. 7" HDMI kiosk. |
-| B2 | 10 | Sensor Bridge ESP32 | Bench | Hub Ch 1. Downstream RS485 Modbus: EM (addr 1), Scale (addr 2), 4-20mA (addr 3). |
-| B3 | 11 | VFD Bridge ESP32 | Bench | Hub Ch 2. Downstream RS485 Modbus: VFD Delta (addr 1). Electrically isolated bus. |
-| B4 | 14 | Bench LinkMaster | Bench rooftop | Hub Ch 5. ESP32 + RA-01SH (SX1262, 865 MHz). LoRa ↔ RS485 gateway. |
-| B5 | 12 | DUT Bridge ESP32 | Bench | Hub Ch 3. Downstream RS485 Modbus: DUT meter (addr 20, configurable). |
-| B6 | 13 | GPIO Controller ESP32 | Bench | Hub Ch 4. All valve relays (SV1, BV-L1/L2/L3, DV1, SV-DRN), tower light (R/Y/G), E-stop monitor, BME280 (ATM-TEMP/HUM/BARO), RES-LVL, RES-TEMP. |
+| ID | Node ID | Firmware | Version | Unit | Location | Role |
+|----|---------|----------|---------|------|----------|------|
+| L1 | 15 | `L1-LinkMaster-LoRa` | 3.0.0 | Lab LinkMaster | Lab rooftop | ESP32 + RA-01SH (SX1262, 865 MHz). LoRa ↔ RS485 gateway. |
+| L2 | 16 | `L2-RS485-Bridge` | 2.0.0 | Lab RS485 Bridge | Lab indoor | ESP32. USB ↔ RS485 transparent byte bridge to L1. |
+| L3 | — | — | — | Lab RPi5 | Lab indoor | Django web portal. Accessed via LAN by lab staff. |
+| B1 | — | — | — | Bench RPi5 + Touch LCD | Bench indoor | Main controller. Django + test engine. USB → Waveshare 8-CH RS485 Hub → 5 ESP32 nodes. 7" HDMI kiosk. |
+| B2 | 10 | `B2-Sensor-Bridge` | 2.0.0 | Sensor Bridge ESP32 | Bench | Hub Ch 1. Downstream RS485 Modbus: EM (addr 1), Scale (addr 2), 4-20mA (addr 3). |
+| B3 | 11 | `B3-VFD-Bridge` | 2.0.0 | VFD Bridge ESP32 | Bench | Hub Ch 2. Downstream RS485 Modbus: VFD Delta (addr 1). Electrically isolated bus. |
+| B4 | 14 | `B4-LinkMaster-LoRa` | 3.0.0 | Bench LinkMaster | Bench rooftop | Hub Ch 5. ESP32 + RA-01SH (SX1262, 865 MHz). LoRa ↔ RS485 gateway. |
+| B5 | 12 | `B5-DUT-Bridge` | 1.0.0 | DUT Bridge ESP32 | Bench | Hub Ch 3. Downstream RS485 Modbus: DUT meter (addr 20, configurable). |
+| B6 | 13 | `B6-GPIO-Controller` | 1.0.0 | GPIO Controller ESP32 | Bench | Hub Ch 4. All valve relays (SV1, BV-L1/L2/L3, DV1, SV-DRN), tower light (R/Y/G), E-stop monitor, BME280 (ATM-TEMP/HUM/BARO), RES-LVL, RES-TEMP. |
 
 ---
 
@@ -818,7 +818,7 @@ command/response** over RS485 at 115200 baud.
 
 ```json
 {"ok": true, "data": {"value": 123.45}}
-{"ok": true, "data": {"node_id": 10, "fw": "B2-Sensor-Bridge", "ver": "2.0.0", "uptime": 3600}}
+{"ok": true, "data": {"node_id": 10, "fw": "B2-Sensor-Bridge", "ver": "2.0.0", "uptime_ms": 3600000}}
 {"ok": false, "error": "TIMEOUT", "message": "No response from addr 1"}
 ```
 
@@ -831,13 +831,15 @@ command/response** over RS485 at 115200 baud.
 
 ### 11.2 Node Command Sets
 
-| Node | Supported Commands | Notes |
-|------|--------------------|-------|
-| B2 (Sensor Bridge) | `MB_READ`, `MB_WRITE`, `STATUS` | Downstream addresses: 1 (EM), 2 (Scale), 3 (4-20mA) |
-| B3 (VFD Bridge) | `MB_READ`, `MB_WRITE`, `STATUS` | Downstream address: 1 (VFD Delta). Isolated bus. |
-| B5 (DUT Bridge) | `MB_READ`, `MB_WRITE`, `SET_ADDR`, `STATUS` | Downstream address: 20 (configurable via SET_ADDR) |
-| B6 (GPIO Controller) | `GPIO_SET`, `GPIO_GET`, `VALVE`, `DIVERTER`, `TOWER`, `SENSOR_READ`, `STATUS` | All valves, tower, E-stop, BME280, RES-LVL, RES-TEMP |
-| B4 (LoRa LinkMaster) | `LORA_SEND`, `STATUS` | Events: `LORA_RX`. LoRa SX1262 bridge. |
+| Node | Node ID | Supported Commands | Notes |
+|------|---------|---------------------|-------|
+| B2 (Sensor Bridge) | 10 | `MB_READ`, `MB_WRITE`, `STATUS` | Downstream addresses: 1 (EM), 2 (Scale), 3 (4-20mA) |
+| B3 (VFD Bridge) | 11 | `MB_READ`, `MB_WRITE`, `STATUS` | Downstream address: 1 (VFD Delta). Isolated bus. |
+| B5 (DUT Bridge) | 12 | `MB_READ`, `MB_WRITE`, `SET_ADDR`, `STATUS` | Downstream address: 20 (configurable via SET_ADDR) |
+| B6 (GPIO Controller) | 13 | `GPIO_SET`, `GPIO_GET`, `VALVE`, `DIVERTER`, `TOWER`, `SENSOR_READ`, `STATUS` | All valves, tower, E-stop, BME280, RES-LVL, RES-TEMP. Events: `ESTOP`. |
+| B4 (LoRa LinkMaster) | 14 | `LORA_SEND`, `STATUS` | Events: `LORA_RX`. LoRa SX1262 bridge. |
+| L1 (Lab LinkMaster) | 15 | `LORA_SEND`, `STATUS` | Events: `LORA_RX`. LoRa SX1262 bridge. Mirror of B4. |
+| L2 (RS485 Bridge) | 16 | — (transparent) | Byte-level USB ↔ RS485 bridge. Boot announcement only. |
 
 ### 11.3 Downstream: B2 Sensor Bus (RS485 Modbus RTU)
 
@@ -905,9 +907,9 @@ command/response** over RS485 at 115200 baud.
 
 | Link | Protocol | Baud | Notes |
 |------|----------|------|-------|
-| L3 → L2 | USB Serial | 115200 | JSON lines, same as bench hub protocol |
-| L2 → L1 | RS485 | 115200 | Transparent byte bridge (L2 forwards all bytes) |
-| L1 ↔ LoRa | SPI | — | SX1262 LoRa radio, ASP encrypted |
+| L3 → L2 (Node 16) | USB Serial | 115200 | JSON lines, same as bench hub protocol. L2 sends boot announcement then forwards transparently. |
+| L2 → L1 (Node 15) | RS485 | 115200 | Transparent byte bridge (L2 forwards all bytes) |
+| L1 ↔ LoRa | SPI | — | SX1262 LoRa radio, ASP encrypted. L1 commands: `LORA_SEND`, `STATUS`. |
 
 ---
 
@@ -992,7 +994,7 @@ command/response** over RS485 at 115200 baud.
 | SPI MISO | GPIO 19 | SPI | IN | VSPI default |
 | SPI MOSI | GPIO 23 | SPI | OUT | VSPI default |
 
-### 12.6 L1 Lab LinkMaster — ESP32 Pinout
+### 12.6 L1 Lab LinkMaster (Node 15) — ESP32 Pinout
 
 | Function | Pin | Interface | Direction | Notes |
 |----------|-----|-----------|-----------|-------|
@@ -1007,7 +1009,7 @@ command/response** over RS485 at 115200 baud.
 | SPI MISO | GPIO 19 | SPI | IN | VSPI default |
 | SPI MOSI | GPIO 23 | SPI | OUT | VSPI default |
 
-### 12.7 L2 Lab RS485 Bridge — ESP32 Pinout
+### 12.7 L2 Lab RS485 Bridge (Node 16) — ESP32 Pinout
 
 | Function | Pin | Interface | Direction | Notes |
 |----------|-----|-----------|-----------|-------|
