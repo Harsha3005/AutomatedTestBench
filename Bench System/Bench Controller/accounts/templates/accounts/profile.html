@@ -1,0 +1,39 @@
+{% extends base_template %}
+
+{% block title %}Profile — {{ user.username }}{% endblock %}
+{% block tab_settings %}active{% endblock %}
+{% block page_title %}My Profile{% endblock %}
+
+{% block content %}
+<div class="{% if is_bench %}hmi-card{% else %}lab-card{% endif %}" style="max-width:600px;">
+    {% if is_bench %}<div class="hmi-card-title">User Profile</div>{% endif %}
+    <table class="{% if is_bench %}hmi-table{% else %}lab-table{% endif %}" style="margin:0;">
+        <tbody>
+            <tr>
+                <td style="font-weight:600;width:140px;{% if is_bench %}color:var(--bench-text-muted){% endif %}">Username</td>
+                <td>{{ user.username }}</td>
+            </tr>
+            <tr>
+                <td style="font-weight:600;{% if is_bench %}color:var(--bench-text-muted){% endif %}">Full Name</td>
+                <td>{{ user.get_full_name|default:"—" }}</td>
+            </tr>
+            <tr>
+                <td style="font-weight:600;{% if is_bench %}color:var(--bench-text-muted){% endif %}">Email</td>
+                <td>{{ user.email|default:"—" }}</td>
+            </tr>
+            <tr>
+                <td style="font-weight:600;{% if is_bench %}color:var(--bench-text-muted){% endif %}">Role</td>
+                <td>
+                    <span class="{% if is_bench %}hmi-badge hmi-badge--running{% else %}lab-badge lab-badge--running{% endif %}">
+                        {{ user.get_role_display }}
+                    </span>
+                </td>
+            </tr>
+            <tr>
+                <td style="font-weight:600;{% if is_bench %}color:var(--bench-text-muted){% endif %}">Joined</td>
+                <td>{{ user.date_joined|date:"d M Y" }}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}

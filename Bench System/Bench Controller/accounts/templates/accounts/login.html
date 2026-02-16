@@ -1,0 +1,450 @@
+{% extends base_template %}
+{% load static %}
+
+{% block title %}Login{% endblock %}
+
+{% block body %}
+{% if is_bench %}
+<!-- ============================================================
+     BENCH LOGIN — Dark industrial P&ID schematic
+     Actual test bench layout: Tank → Pump → Ref Meter → DUT → Tank
+     ============================================================ -->
+<div class="bench-login-screen" style="position:relative;overflow:hidden;">
+    <svg style="position:absolute;inset:0;" width="1024" height="600" viewBox="0 0 1024 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <style>
+                .pipe{stroke:#666;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;fill:none;opacity:0.3}
+                .pipe-thin{stroke:#555;stroke-width:1.2;fill:none;opacity:0.15}
+                .sym{stroke:#777;stroke-width:1.5;fill:none;opacity:0.35}
+                .sym-fill{fill:#777;opacity:0.2}
+                .label{fill:#888;font-family:'Inter',sans-serif;font-size:9px;letter-spacing:0.5px;opacity:0.35}
+                .label-sm{fill:#888;font-family:'Inter',sans-serif;font-size:7px;opacity:0.25}
+            </style>
+        </defs>
+
+        <!-- ====== MAIN FLOW LOOP (top half, behind card) ====== -->
+        <!-- Supply Tank (left) -->
+        <rect x="30" y="70" width="60" height="80" rx="4" class="sym"/>
+        <line x1="40" y1="110" x2="80" y2="110" class="pipe-thin"/>
+        <line x1="40" y1="120" x2="80" y2="120" class="pipe-thin"/>
+        <path d="M35 90 Q60 82 85 90" class="pipe-thin"/>
+        <text x="60" y="165" text-anchor="middle" class="label">SUPPLY</text>
+        <text x="60" y="175" text-anchor="middle" class="label-sm">TANK</text>
+
+        <!-- Pipe: Tank → Pump Suction -->
+        <line x1="90" y1="110" x2="148" y2="110" class="pipe"/>
+        <polygon points="120,106 128,110 120,114" class="sym-fill"/>
+        <line x1="148" y1="110" x2="148" y2="125" class="pipe"/>
+        <line x1="148" y1="125" x2="163" y2="125" class="pipe"/>
+
+        <!-- ══ MULTISTAGE VERTICAL PUMP ══ -->
+        <!-- Motor housing -->
+        <rect x="165" y="38" width="20" height="14" rx="3" class="sym" style="stroke-width:1.8"/>
+        <text x="175" y="48" text-anchor="middle" fill="#888" font-family="Inter" font-size="6.5" opacity="0.3" font-weight="700">M</text>
+        <!-- Shaft coupling -->
+        <line x1="175" y1="52" x2="175" y2="55" stroke="#777" stroke-width="1.5" opacity="0.25"/>
+        <!-- Pump casing (vertical multi-stage body) -->
+        <rect x="163" y="55" width="24" height="83" rx="3" class="sym" style="stroke-width:1.8"/>
+        <!-- Stage separators (6 stages, 5 lines) -->
+        <line x1="167" y1="69" x2="183" y2="69" class="pipe-thin" style="opacity:0.22"/>
+        <line x1="167" y1="83" x2="183" y2="83" class="pipe-thin" style="opacity:0.22"/>
+        <line x1="167" y1="97" x2="183" y2="97" class="pipe-thin" style="opacity:0.22"/>
+        <line x1="167" y1="111" x2="183" y2="111" class="pipe-thin" style="opacity:0.22"/>
+        <line x1="167" y1="125" x2="183" y2="125" class="pipe-thin" style="opacity:0.22"/>
+        <!-- Impeller arcs (one per stage) -->
+        <path d="M170 61 Q175 58 180 61" class="pipe-thin" style="opacity:0.15"/>
+        <path d="M170 75 Q175 72 180 75" class="pipe-thin" style="opacity:0.15"/>
+        <path d="M170 89 Q175 86 180 89" class="pipe-thin" style="opacity:0.15"/>
+        <path d="M170 103 Q175 100 180 103" class="pipe-thin" style="opacity:0.15"/>
+        <path d="M170 117 Q175 114 180 117" class="pipe-thin" style="opacity:0.15"/>
+        <path d="M170 131 Q175 128 180 131" class="pipe-thin" style="opacity:0.15"/>
+        <!-- Upward flow arrows inside pump -->
+        <polygon points="173,120 175,114 177,120" class="sym-fill" style="opacity:0.12"/>
+        <polygon points="173,90 175,84 177,90" class="sym-fill" style="opacity:0.12"/>
+        <!-- Base plate & foundation -->
+        <line x1="159" y1="138" x2="191" y2="138" stroke="#777" stroke-width="2" opacity="0.25"/>
+        <line x1="161" y1="141" x2="189" y2="141" stroke="#777" stroke-width="1.2" opacity="0.15"/>
+        <!-- Labels -->
+        <text x="175" y="155" text-anchor="middle" class="label">PUMP</text>
+        <text x="175" y="165" text-anchor="middle" class="label-sm">P-01</text>
+
+        <!-- Pipe: Pump Discharge → flow line → V1 -->
+        <line x1="187" y1="66" x2="210" y2="66" class="pipe"/>
+        <line x1="210" y1="66" x2="210" y2="110" class="pipe"/>
+        <polygon points="206,88 210,96 214,88" class="sym-fill"/>
+        <line x1="210" y1="110" x2="240" y2="110" class="pipe"/>
+
+        <!-- Valve V1 (gate valve — bowtie) -->
+        <polygon points="240,100 255,110 240,120" class="sym-fill"/>
+        <polygon points="270,100 255,110 270,120" class="sym-fill"/>
+        <line x1="255" y1="95" x2="255" y2="85" stroke="#777" stroke-width="1.5" opacity="0.3" stroke-linecap="round"/>
+        <text x="255" y="135" text-anchor="middle" class="label">V1</text>
+
+        <!-- Pipe: V1 → Pressure gauge → Ref Meter -->
+        <line x1="270" y1="110" x2="380" y2="110" class="pipe"/>
+        <polygon points="330,106 338,110 330,114" class="sym-fill"/>
+
+        <!-- Pressure gauge P1 (circle with P) -->
+        <circle cx="310" cy="80" r="12" class="sym"/>
+        <text x="310" y="84" text-anchor="middle" fill="#888" font-family="Inter" font-size="10" opacity="0.35" font-weight="600">P</text>
+        <line x1="310" y1="92" x2="310" y2="110" class="pipe-thin"/>
+        <text x="310" y="65" text-anchor="middle" class="label-sm">PT-01</text>
+
+        <!-- Reference Flow Meter -->
+        <rect x="380" y="96" width="56" height="28" rx="6" class="sym"/>
+        <circle cx="408" cy="110" r="3" class="sym-fill" style="opacity:0.3"/>
+        <line x1="416" y1="104" x2="430" y2="104" stroke="#777" stroke-width="1" opacity="0.25"/>
+        <line x1="416" y1="110" x2="426" y2="110" stroke="#777" stroke-width="1" opacity="0.2"/>
+        <text x="408" y="140" text-anchor="middle" class="label">REF METER</text>
+        <text x="408" y="150" text-anchor="middle" class="label-sm">FT-01</text>
+
+        <!-- ====== TOP RIGHT — DUT section ====== -->
+        <!-- Pipe: Ref → Valve V2 → DUT section -->
+        <line x1="436" y1="110" x2="1024" y2="110" class="pipe" style="opacity:0.12"/>
+
+        <!-- Pipe from ref meter going right then curving down on the right side -->
+        <line x1="436" y1="110" x2="550" y2="110" class="pipe" style="opacity:0.18"/>
+
+        <!-- Temperature sensor -->
+        <circle cx="500" cy="80" r="10" class="sym"/>
+        <text x="500" y="84" text-anchor="middle" fill="#888" font-family="Inter" font-size="10" opacity="0.35" font-weight="600">T</text>
+        <line x1="500" y1="90" x2="500" y2="110" class="pipe-thin"/>
+        <text x="500" y="65" text-anchor="middle" class="label-sm">TT-01</text>
+
+        <!-- ====== BOTTOM RETURN LOOP ====== -->
+        <!-- Collection Tank (right) -->
+        <rect x="930" y="440" width="60" height="80" rx="4" class="sym"/>
+        <line x1="940" y1="480" x2="980" y2="480" class="pipe-thin"/>
+        <line x1="940" y1="490" x2="980" y2="490" class="pipe-thin"/>
+        <path d="M935 460 Q960 452 985 460" class="pipe-thin"/>
+        <text x="960" y="535" text-anchor="middle" class="label">COLLECT</text>
+        <text x="960" y="545" text-anchor="middle" class="label-sm">TANK</text>
+
+        <!-- Return pipe bottom -->
+        <line x1="0" y1="480" x2="145" y2="480" class="pipe" style="opacity:0.2"/>
+        <line x1="830" y1="480" x2="930" y2="480" class="pipe"/>
+        <polygon points="880,476 888,480 880,484" class="sym-fill"/>
+
+        <!-- Valve V3 on return -->
+        <polygon points="850,470 865,480 850,490" class="sym-fill" style="opacity:0.15"/>
+        <polygon points="880,470 865,480 880,490" class="sym-fill" style="opacity:0.15"/>
+        <text x="865" y="505" text-anchor="middle" class="label">V3</text>
+
+        <!-- Vertical pipe right: top flow → bottom return -->
+        <line x1="960" y1="110" x2="960" y2="440" class="pipe" style="opacity:0.15"/>
+        <polygon points="956,200 960,210 964,200" class="sym-fill" style="opacity:0.15"/>
+        <polygon points="956,350 960,360 964,350" class="sym-fill" style="opacity:0.15"/>
+
+        <!-- Vertical pipe left: bottom return → recirculate to supply -->
+        <line x1="60" y1="150" x2="60" y2="480" class="pipe" style="opacity:0.15"/>
+        <polygon points="56,250 60,260 64,250" class="sym-fill" style="opacity:0.12"/>
+        <polygon points="56,380 60,390 64,380" class="sym-fill" style="opacity:0.12"/>
+
+        <!-- ====== WEIGHT MEASUREMENT (bottom center-right) ====== -->
+        <rect x="700" y="455" width="50" height="40" rx="4" class="sym" style="opacity:0.25"/>
+        <line x1="710" y1="500" x2="710" y2="510" stroke="#666" stroke-width="2" opacity="0.2"/>
+        <line x1="740" y1="500" x2="740" y2="510" stroke="#666" stroke-width="2" opacity="0.2"/>
+        <line x1="700" y1="510" x2="750" y2="510" stroke="#666" stroke-width="2.5" opacity="0.2"/>
+        <text x="725" y="535" text-anchor="middle" class="label">WEIGHING</text>
+        <text x="725" y="545" text-anchor="middle" class="label-sm">WT-01</text>
+
+        <!-- Pipe to weighing scale -->
+        <line x1="750" y1="480" x2="830" y2="480" class="pipe" style="opacity:0.2"/>
+
+        <!-- ====== DUT AREA (right of center) ====== -->
+        <!-- DUT test meter — prominent -->
+        <rect x="760" y="85" width="70" height="50" rx="8" class="sym" style="stroke-width:2;opacity:0.3"/>
+        <text x="795" y="116" text-anchor="middle" fill="#888" font-family="Inter" font-size="11" font-weight="700" opacity="0.3">DUT</text>
+        <text x="795" y="150" text-anchor="middle" class="label">METER UNDER</text>
+        <text x="795" y="160" text-anchor="middle" class="label-sm">TEST</text>
+
+        <!-- Pipe: to DUT -->
+        <line x1="550" y1="110" x2="760" y2="110" class="pipe" style="opacity:0.12"/>
+
+        <!-- Pipe: DUT exit going down -->
+        <line x1="830" y1="110" x2="960" y2="110" class="pipe" style="opacity:0.12"/>
+
+        <!-- Pressure gauge P2 (after DUT) -->
+        <circle cx="880" cy="80" r="12" class="sym" style="opacity:0.25"/>
+        <text x="880" y="84" text-anchor="middle" fill="#888" font-family="Inter" font-size="10" opacity="0.3" font-weight="600">P</text>
+        <line x1="880" y1="92" x2="880" y2="110" class="pipe-thin"/>
+        <text x="880" y="65" text-anchor="middle" class="label-sm">PT-02</text>
+
+        <!-- ====== SECONDARY LINES (edges, lighter) ====== -->
+        <!-- Drain lines -->
+        <line x1="0" y1="560" x2="200" y2="560" class="pipe" style="opacity:0.08"/>
+        <line x1="830" y1="560" x2="1024" y2="560" class="pipe" style="opacity:0.08"/>
+        <text x="100" y="575" text-anchor="middle" class="label-sm" style="opacity:0.15">DRAIN</text>
+        <text x="930" y="575" text-anchor="middle" class="label-sm" style="opacity:0.15">DRAIN</text>
+
+        <!-- Bypass line (dashed, behind card area) -->
+        <line x1="270" y1="200" x2="270" y2="420" class="pipe" style="stroke-dasharray:6 4;opacity:0.08"/>
+        <line x1="270" y1="420" x2="700" y2="420" class="pipe" style="stroke-dasharray:6 4;opacity:0.08"/>
+        <text x="270" y="310" text-anchor="middle" class="label-sm" style="opacity:0.12" transform="rotate(-90 270 310)">BYPASS</text>
+
+        <!-- ====== GRID LINES (very subtle engineering paper effect) ====== -->
+        <line x1="0" y1="0" x2="0" y2="600" stroke="#444" stroke-width="0.5" opacity="0.06"/>
+        <line x1="0" y1="30" x2="1024" y2="30" stroke="#444" stroke-width="0.5" opacity="0.04"/>
+        <line x1="0" y1="590" x2="1024" y2="590" stroke="#444" stroke-width="0.5" opacity="0.04"/>
+        <line x1="1024" y1="0" x2="1024" y2="600" stroke="#444" stroke-width="0.5" opacity="0.06"/>
+
+        <!-- Title block (bottom right, like engineering drawings) -->
+        <rect x="820" y="570" width="194" height="24" rx="2" stroke="#555" stroke-width="0.8" opacity="0.1" fill="none"/>
+        <text x="917" y="586" text-anchor="middle" class="label-sm" style="opacity:0.18;font-size:7px">P&amp;ID — WATER METER CALIBRATION BENCH — REV A</text>
+    </svg>
+
+    <!-- Login card with glass effect -->
+    <div style="position:relative;z-index:1;width:360px;background:rgba(40,44,52,0.88);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:36px;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+        <div style="text-align:center;margin-bottom:28px;">
+            <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:14px;background:rgba(76,175,80,0.1);border:1px solid rgba(76,175,80,0.2);margin-bottom:12px;">
+                <i data-lucide="gauge" style="width:28px;height:28px;color:#4CAF50;"></i>
+            </div>
+            <h1 style="font-size:22px;font-weight:700;color:#e8eaed;margin:0 0 4px;">I.R.A.S Test Bench</h1>
+            <p style="font-size:12px;color:#9aa0a6;margin:0;">Water Meter Calibration System</p>
+        </div>
+
+        {% if messages %}
+        {% for message in messages %}
+        <div style="background:rgba(239,83,80,0.1);border:1px solid rgba(239,83,80,0.25);border-radius:8px;padding:10px 14px;margin-bottom:16px;color:#EF5350;font-size:13px;">{{ message }}</div>
+        {% endfor %}
+        {% endif %}
+
+        <form method="post">
+            {% csrf_token %}
+            <div style="margin-bottom:14px;">
+                <label style="display:block;font-size:11px;color:#9aa0a6;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;font-weight:600;">Username</label>
+                <input type="text" name="username" id="username" required autofocus autocomplete="username"
+                       style="width:100%;box-sizing:border-box;background:rgba(26,29,35,0.6);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#e8eaed;padding:14px 16px;font-size:15px;font-family:Inter,sans-serif;outline:none;transition:border 0.2s;"
+                       onfocus="this.style.borderColor='rgba(76,175,80,0.5)';this.style.boxShadow='0 0 0 3px rgba(76,175,80,0.08)'"
+                       onblur="this.style.borderColor='rgba(255,255,255,0.08)';this.style.boxShadow='none'">
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-size:11px;color:#9aa0a6;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;font-weight:600;">Password</label>
+                <input type="password" name="password" id="password" required autocomplete="current-password"
+                       style="width:100%;box-sizing:border-box;background:rgba(26,29,35,0.6);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#e8eaed;padding:14px 16px;font-size:15px;font-family:Inter,sans-serif;outline:none;transition:border 0.2s;"
+                       onfocus="this.style.borderColor='rgba(76,175,80,0.5)';this.style.boxShadow='0 0 0 3px rgba(76,175,80,0.08)'"
+                       onblur="this.style.borderColor='rgba(255,255,255,0.08)';this.style.boxShadow='none'">
+            </div>
+            <button type="submit" class="btn-hmi btn-hmi-primary" style="width:100%;padding:14px;border-radius:8px;font-size:15px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;">
+                Sign In
+            </button>
+        </form>
+        <p style="text-align:center;margin:20px 0 0;font-size:10px;color:#5f6368;">
+            I.R.A.S &mdash; A Product by A.C.M.I.S Technologies LLP
+        </p>
+    </div>
+</div>
+<link rel="stylesheet" href="{% static 'css/tokens.css' %}">
+<link rel="stylesheet" href="{% static 'css/bench_hmi.css' %}">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script>lucide.createIcons();</script>
+
+{% else %}
+<!-- ============================================================
+     LAB LOGIN — Light blueprint P&ID schematic
+     Same test bench layout, blueprint/engineering drawing style
+     ============================================================ -->
+<div class="lab-login-screen">
+    <svg class="lab-login-bg-svg" preserveAspectRatio="xMidYMid slice" viewBox="0 0 1440 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <style>
+                .bp{stroke:#94a3b8;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;fill:none;opacity:0.22}
+                .bp-thin{stroke:#94a3b8;stroke-width:1;fill:none;opacity:0.12}
+                .bp-sym{stroke:#94a3b8;stroke-width:1.5;fill:none;opacity:0.25}
+                .bp-fill{fill:#94a3b8;opacity:0.15}
+                .bp-lbl{fill:#94a3b8;font-family:'Inter',sans-serif;font-size:10px;letter-spacing:0.5px;opacity:0.28}
+                .bp-lbl-sm{fill:#94a3b8;font-family:'Inter',sans-serif;font-size:8px;opacity:0.2}
+            </style>
+        </defs>
+
+        <!-- Blueprint grid (very subtle) -->
+        <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+            <line x1="50" y1="0" x2="50" y2="50" stroke="#cbd5e1" stroke-width="0.3" opacity="0.25"/>
+            <line x1="0" y1="50" x2="50" y2="50" stroke="#cbd5e1" stroke-width="0.3" opacity="0.25"/>
+        </pattern>
+        <rect width="1440" height="900" fill="url(#grid)"/>
+
+        <!-- ====== MAIN FLOW LOOP (upper section) ====== -->
+        <!-- Supply Tank -->
+        <rect x="60" y="110" width="80" height="110" rx="5" class="bp-sym"/>
+        <line x1="75" y1="160" x2="125" y2="160" class="bp-thin"/>
+        <line x1="75" y1="175" x2="125" y2="175" class="bp-thin"/>
+        <path d="M67 135 Q100 125 133 135" class="bp-thin"/>
+        <text x="100" y="240" text-anchor="middle" class="bp-lbl">SUPPLY</text>
+        <text x="100" y="255" text-anchor="middle" class="bp-lbl-sm">TANK</text>
+
+        <!-- Pipe: Tank → Pump Suction -->
+        <line x1="140" y1="165" x2="218" y2="165" class="bp"/>
+        <polygon points="185,161 195,165 185,169" class="bp-fill"/>
+        <line x1="218" y1="165" x2="218" y2="180" class="bp"/>
+        <line x1="218" y1="180" x2="245" y2="180" class="bp"/>
+
+        <!-- ══ MULTISTAGE VERTICAL PUMP ══ -->
+        <rect x="247" y="48" width="26" height="18" rx="3" class="bp-sym" style="stroke-width:1.8"/>
+        <text x="260" y="61" text-anchor="middle" fill="#94a3b8" font-family="Inter" font-size="9" opacity="0.25" font-weight="700">M</text>
+        <line x1="260" y1="66" x2="260" y2="72" stroke="#94a3b8" stroke-width="1.5" opacity="0.18"/>
+        <rect x="245" y="72" width="30" height="112" rx="4" class="bp-sym" style="stroke-width:1.8"/>
+        <line x1="250" y1="88" x2="270" y2="88" class="bp-thin" style="opacity:0.18"/>
+        <line x1="250" y1="104" x2="270" y2="104" class="bp-thin" style="opacity:0.18"/>
+        <line x1="250" y1="120" x2="270" y2="120" class="bp-thin" style="opacity:0.18"/>
+        <line x1="250" y1="136" x2="270" y2="136" class="bp-thin" style="opacity:0.18"/>
+        <line x1="250" y1="152" x2="270" y2="152" class="bp-thin" style="opacity:0.18"/>
+        <line x1="250" y1="168" x2="270" y2="168" class="bp-thin" style="opacity:0.18"/>
+        <path d="M253 80 Q260 76 267 80" class="bp-thin" style="opacity:0.12"/>
+        <path d="M253 96 Q260 92 267 96" class="bp-thin" style="opacity:0.12"/>
+        <path d="M253 112 Q260 108 267 112" class="bp-thin" style="opacity:0.12"/>
+        <path d="M253 128 Q260 124 267 128" class="bp-thin" style="opacity:0.12"/>
+        <path d="M253 144 Q260 140 267 144" class="bp-thin" style="opacity:0.12"/>
+        <path d="M253 160 Q260 156 267 160" class="bp-thin" style="opacity:0.12"/>
+        <path d="M253 176 Q260 172 267 176" class="bp-thin" style="opacity:0.12"/>
+        <polygon points="258,170 260,162 262,170" class="bp-fill" style="opacity:0.1"/>
+        <polygon points="258,135 260,127 262,135" class="bp-fill" style="opacity:0.1"/>
+        <polygon points="258,100 260,92 262,100" class="bp-fill" style="opacity:0.1"/>
+        <line x1="240" y1="184" x2="280" y2="184" stroke="#94a3b8" stroke-width="2" opacity="0.18"/>
+        <line x1="242" y1="188" x2="278" y2="188" stroke="#94a3b8" stroke-width="1.2" opacity="0.12"/>
+        <text x="260" y="204" text-anchor="middle" class="bp-lbl">PUMP</text>
+        <text x="260" y="219" text-anchor="middle" class="bp-lbl-sm">P-01</text>
+
+        <!-- Pipe: Pump Discharge → flow line → V1 -->
+        <line x1="275" y1="82" x2="300" y2="82" class="bp"/>
+        <line x1="300" y1="82" x2="300" y2="165" class="bp"/>
+        <polygon points="296,125 300,135 304,125" class="bp-fill"/>
+        <line x1="300" y1="165" x2="350" y2="165" class="bp"/>
+
+        <!-- Valve V1 -->
+        <polygon points="350,153 370,165 350,177" class="bp-fill"/>
+        <polygon points="390,153 370,165 390,177" class="bp-fill"/>
+        <line x1="370" y1="148" x2="370" y2="135" stroke="#94a3b8" stroke-width="1.5" opacity="0.22" stroke-linecap="round"/>
+        <text x="370" y="198" text-anchor="middle" class="bp-lbl">V-01</text>
+
+        <!-- Pipe: V1 → PT-01 → Ref Meter -->
+        <line x1="390" y1="165" x2="580" y2="165" class="bp"/>
+        <polygon points="480,161 490,165 480,169" class="bp-fill"/>
+
+        <!-- Pressure gauge PT-01 -->
+        <circle cx="440" cy="125" r="16" class="bp-sym"/>
+        <text x="440" y="130" text-anchor="middle" fill="#94a3b8" font-family="Inter" font-size="12" opacity="0.28" font-weight="600">P</text>
+        <line x1="440" y1="141" x2="440" y2="165" class="bp-thin"/>
+        <text x="440" y="105" text-anchor="middle" class="bp-lbl-sm">PT-01</text>
+
+        <!-- Ref Meter -->
+        <rect x="580" y="148" width="72" height="34" rx="8" class="bp-sym"/>
+        <circle cx="616" cy="165" r="4" class="bp-fill" style="opacity:0.22"/>
+        <line x1="626" y1="157" x2="644" y2="157" stroke="#94a3b8" stroke-width="1" opacity="0.18"/>
+        <line x1="626" y1="165" x2="638" y2="165" stroke="#94a3b8" stroke-width="1" opacity="0.14"/>
+        <text x="616" y="200" text-anchor="middle" class="bp-lbl">REF METER</text>
+        <text x="616" y="215" text-anchor="middle" class="bp-lbl-sm">FT-01</text>
+
+        <!-- Temperature sensor -->
+        <circle cx="530" cy="125" r="14" class="bp-sym"/>
+        <text x="530" y="130" text-anchor="middle" fill="#94a3b8" font-family="Inter" font-size="12" opacity="0.28" font-weight="600">T</text>
+        <line x1="530" y1="139" x2="530" y2="165" class="bp-thin"/>
+        <text x="530" y="105" text-anchor="middle" class="bp-lbl-sm">TT-01</text>
+
+        <!-- ====== RIGHT SIDE — DUT + return ====== -->
+        <line x1="652" y1="165" x2="780" y2="165" class="bp" style="opacity:0.1"/>
+        <line x1="1350" y1="165" x2="1350" y2="680" class="bp" style="opacity:0.1"/>
+        <polygon points="1346,350 1350,362 1354,350" class="bp-fill" style="opacity:0.1"/>
+        <polygon points="1346,550 1350,562 1354,550" class="bp-fill" style="opacity:0.1"/>
+        <line x1="780" y1="165" x2="1440" y2="165" class="bp" style="opacity:0.06"/>
+
+        <!-- DUT area -->
+        <rect x="1080" y="140" width="95" height="55" rx="10" class="bp-sym" style="stroke-width:2;opacity:0.2"/>
+        <text x="1127" y="175" text-anchor="middle" fill="#94a3b8" font-family="Inter" font-size="13" font-weight="700" opacity="0.22">DUT</text>
+        <text x="1127" y="215" text-anchor="middle" class="bp-lbl">METER UNDER TEST</text>
+
+        <!-- PT-02 after DUT -->
+        <circle cx="1240" cy="125" r="16" class="bp-sym" style="opacity:0.2"/>
+        <text x="1240" y="130" text-anchor="middle" fill="#94a3b8" font-family="Inter" font-size="12" opacity="0.22" font-weight="600">P</text>
+        <line x1="1240" y1="141" x2="1240" y2="165" class="bp-thin" style="opacity:0.08"/>
+        <text x="1240" y="105" text-anchor="middle" class="bp-lbl-sm" style="opacity:0.15">PT-02</text>
+
+        <!-- ====== BOTTOM RETURN LOOP ====== -->
+        <rect x="1300" y="660" width="80" height="110" rx="5" class="bp-sym"/>
+        <line x1="1315" y1="710" x2="1365" y2="710" class="bp-thin"/>
+        <line x1="1315" y1="725" x2="1365" y2="725" class="bp-thin"/>
+        <path d="M1307 685 Q1340 675 1373 685" class="bp-thin"/>
+        <text x="1340" y="790" text-anchor="middle" class="bp-lbl">COLLECTION</text>
+        <text x="1340" y="805" text-anchor="middle" class="bp-lbl-sm">TANK</text>
+
+        <line x1="0" y1="710" x2="220" y2="710" class="bp" style="opacity:0.15"/>
+        <line x1="1180" y1="710" x2="1300" y2="710" class="bp"/>
+        <polygon points="1240,706 1250,710 1240,714" class="bp-fill"/>
+
+        <polygon points="1190,698 1210,710 1190,722" class="bp-fill" style="opacity:0.12"/>
+        <polygon points="1230,698 1210,710 1230,722" class="bp-fill" style="opacity:0.12"/>
+        <text x="1210" y="740" text-anchor="middle" class="bp-lbl">V-03</text>
+
+        <!-- Weighing Scale -->
+        <rect x="1000" y="685" width="65" height="50" rx="5" class="bp-sym" style="opacity:0.2"/>
+        <line x1="1010" y1="740" x2="1010" y2="752" stroke="#94a3b8" stroke-width="1.5" opacity="0.15"/>
+        <line x1="1055" y1="740" x2="1055" y2="752" stroke="#94a3b8" stroke-width="1.5" opacity="0.15"/>
+        <line x1="1000" y1="752" x2="1065" y2="752" stroke="#94a3b8" stroke-width="2" opacity="0.15"/>
+        <text x="1032" y="775" text-anchor="middle" class="bp-lbl">WEIGHING</text>
+        <text x="1032" y="790" text-anchor="middle" class="bp-lbl-sm">WT-01</text>
+
+        <line x1="1065" y1="710" x2="1180" y2="710" class="bp" style="opacity:0.15"/>
+
+        <line x1="100" y1="220" x2="100" y2="710" class="bp" style="opacity:0.1"/>
+        <polygon points="96,400 100,412 104,400" class="bp-fill" style="opacity:0.1"/>
+        <polygon points="96,580 100,592 104,580" class="bp-fill" style="opacity:0.08"/>
+
+        <!-- Secondary lines -->
+        <line x1="0" y1="840" x2="300" y2="840" class="bp" style="opacity:0.06"/>
+        <line x1="1200" y1="840" x2="1440" y2="840" class="bp" style="opacity:0.06"/>
+        <text x="150" y="858" text-anchor="middle" class="bp-lbl-sm" style="opacity:0.12">DRAIN</text>
+        <text x="1320" y="858" text-anchor="middle" class="bp-lbl-sm" style="opacity:0.12">DRAIN</text>
+
+        <line x1="390" y1="260" x2="390" y2="620" class="bp" style="stroke-dasharray:8 5;opacity:0.06"/>
+        <line x1="390" y1="620" x2="1000" y2="620" class="bp" style="stroke-dasharray:8 5;opacity:0.06"/>
+        <text x="390" y="440" text-anchor="middle" class="bp-lbl-sm" style="opacity:0.1" transform="rotate(-90 390 440)">BYPASS</text>
+
+        <!-- Border & title block -->
+        <rect x="10" y="10" width="1420" height="880" rx="0" stroke="#cbd5e1" stroke-width="1" opacity="0.12" fill="none"/>
+        <rect x="1140" y="855" width="280" height="30" rx="3" stroke="#cbd5e1" stroke-width="0.8" opacity="0.12" fill="none"/>
+        <text x="1280" y="875" text-anchor="middle" class="bp-lbl-sm" style="opacity:0.18;font-size:8px">P&amp;ID — WATER METER CALIBRATION SYSTEM — REV A</text>
+    </svg>
+
+    <!-- Login card with glass effect -->
+    <div class="lab-login-glass">
+        <div class="lab-login-header">
+            <div class="lab-login-icon-box">
+                <i data-lucide="droplets"></i>
+            </div>
+            <h1>I.R.A.S Water Meter Lab</h1>
+            <p>Sign in to your account</p>
+        </div>
+
+        {% if messages %}
+        {% for message in messages %}
+        <div class="lab-login-error">{{ message }}</div>
+        {% endfor %}
+        {% endif %}
+
+        <form method="post">
+            {% csrf_token %}
+            <div class="lab-login-form-group">
+                <label class="lab-login-label">Username</label>
+                <input type="text" name="username" id="username" required autofocus autocomplete="username"
+                       class="lab-login-input">
+            </div>
+            <div class="lab-login-form-group">
+                <label class="lab-login-label">Password</label>
+                <input type="password" name="password" id="password" required autocomplete="current-password"
+                       class="lab-login-input">
+            </div>
+            <button type="submit" class="lab-login-submit">
+                Sign In
+            </button>
+        </form>
+        <p class="lab-login-footer">
+            &copy; 2025 I.R.A.S &mdash; A Product by A.C.M.I.S Technologies LLP
+        </p>
+    </div>
+</div>
+<link rel="stylesheet" href="{% static 'css/tokens.css' %}">
+<link rel="stylesheet" href="{% static 'css/lab_dashboard.css' %}">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script>lucide.createIcons();</script>
+{% endif %}
+{% endblock body %}

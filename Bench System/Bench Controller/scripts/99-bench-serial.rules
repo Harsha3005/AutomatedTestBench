@@ -1,0 +1,32 @@
+# ==============================================================
+# IIITB Water Meter Test Bench - USB Serial Port Mapping
+# Install: sudo cp 99-bench-serial.rules /etc/udev/rules.d/
+# Reload: sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# Maps ESP32 USB-Serial ports to stable symlinks based on
+# physical USB port path (KERNELS). Update paths after
+# connecting hardware to specific USB ports on the RPi5.
+#
+# To find the port path for a connected device:
+#   udevadm info -a -n /dev/ttyUSB0 | grep KERNELS
+# Or match by serial number:
+#   udevadm info -a -n /dev/ttyUSB0 | grep serial
+# ==============================================================
+
+# B2 — RS485 Sensor Bridge (Bus 1: EM, Scale, 4-20mA, DUT + GPIO)
+# KERNELS path: update after physical connection
+# SUBSYSTEM=="tty", KERNELS=="1-1.2:1.0", SYMLINK+="ttyBENCH_BUS"
+# Alternative: match by serial number
+# SUBSYSTEM=="tty", ATTRS{serial}=="XXXXXXXXXX", SYMLINK+="ttyBENCH_BUS"
+
+# B3 — VFD Bridge (Bus 2: Delta VFD Modbus RTU)
+# KERNELS path: update after physical connection
+# SUBSYSTEM=="tty", KERNELS=="1-1.3:1.0", SYMLINK+="ttyVFD_BUS"
+# Alternative: match by serial number
+# SUBSYSTEM=="tty", ATTRS{serial}=="XXXXXXXXXX", SYMLINK+="ttyVFD_BUS"
+
+# B4 — LinkMaster LoRa (SX1262 transparent bridge)
+# KERNELS path: update after physical connection
+# SUBSYSTEM=="tty", KERNELS=="1-1.4:1.0", SYMLINK+="ttyLORA"
+# Alternative: match by serial number
+# SUBSYSTEM=="tty", ATTRS{serial}=="XXXXXXXXXX", SYMLINK+="ttyLORA"

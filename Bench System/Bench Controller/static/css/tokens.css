@@ -1,0 +1,148 @@
+/* Design Tokens — IIIT Bangalore Water Meter Test Bench
+   Based on Doc3_UI_UX_Specification.docx
+   Font: Inter | Icons: Lucide | Grid: 8px spacing */
+
+:root {
+    /* Primary */
+    --color-primary: #2563EB;
+    --color-primary-light: #3B82F6;
+    --color-primary-dark: #1D4ED8;
+
+    /* Status */
+    --color-success: #16A34A;
+    --color-warning: #D97706;
+    --color-danger: #DC2626;
+    --color-info: #0891B2;
+
+    /* Neutral */
+    --color-bg: #F8FAFC;
+    --color-surface: #FFFFFF;
+    --color-border: #E2E8F0;
+    --color-text: #1E293B;
+    --color-text-muted: #64748B;
+    --color-text-light: #94A3B8;
+
+    /* Test Status Colors */
+    --color-pending: #F59E0B;
+    --color-running: #3B82F6;
+    --color-completed: #16A34A;
+    --color-failed: #DC2626;
+    --color-aborted: #6B7280;
+    --color-pass: #16A34A;
+    --color-fail: #DC2626;
+
+    /* Spacing (8px grid) */
+    --space-1: 0.25rem;  /* 4px */
+    --space-2: 0.5rem;   /* 8px */
+    --space-3: 0.75rem;  /* 12px */
+    --space-4: 1rem;     /* 16px */
+    --space-5: 1.25rem;  /* 20px */
+    --space-6: 1.5rem;   /* 24px */
+    --space-8: 2rem;     /* 32px */
+    --space-10: 2.5rem;  /* 40px */
+    --space-12: 3rem;    /* 48px */
+
+    /* Typography */
+    --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-base: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.25rem;
+    --font-size-2xl: 1.5rem;
+    --font-size-3xl: 1.875rem;
+
+    /* Border Radius */
+    --radius-sm: 0.25rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-full: 9999px;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.07);
+    --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
+
+    /* Bench Touch UI specific */
+    --touch-min-target: 48px;
+    --bench-header-h: 56px;
+    --bench-tab-h: 64px;
+
+    /* === BENCH HMI PALETTE (Cadera / Erlenbach industrial style) === */
+    --bench-bg: #1a1d23;
+    --bench-surface: #22262e;
+    --bench-card: #282c34;
+    --bench-card-hover: #2e3239;
+    --bench-card-border: #363a42;
+    --bench-accent: #4CAF50;
+    --bench-accent-dim: rgba(76, 175, 80, 0.12);
+    --bench-accent-hover: #66BB6A;
+    --bench-success: #66BB6A;
+    --bench-warning: #FFA726;
+    --bench-danger: #EF5350;
+    --bench-text: #e8eaed;
+    --bench-text-muted: #9aa0a6;
+    --bench-text-dim: #5f6368;
+
+    /* Bench layout dimensions */
+    --bench-status-bar-h: 40px;
+    --bench-tab-bar-h: 56px;
+    --bench-main-h: calc(600px - var(--bench-status-bar-h) - var(--bench-tab-bar-h));
+    --bench-screen-w: 1024px;
+    --bench-touch-min: 60px;
+
+    /* === LAB PREMIUM DASHBOARD PALETTE === */
+    --lab-sidebar-w: 264px;
+    --lab-sidebar-bg: #0f172a;
+    --lab-sidebar-text: #8b95a5;
+    --lab-sidebar-active: #ffffff;
+    --lab-sidebar-active-bg: rgba(255, 255, 255, 0.08);
+    --lab-sidebar-hover: rgba(255, 255, 255, 0.04);
+    --lab-sidebar-border: rgba(255, 255, 255, 0.06);
+    --lab-content-bg: #f2f5f2;
+    --lab-card-bg: #ffffff;
+    --lab-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    --lab-card-shadow-hover: 0 8px 25px rgba(0, 0, 0, 0.07);
+    --lab-header-border: #e8ece8;
+    --lab-accent: #4f46e5;
+    --lab-accent-light: #6366f1;
+    --lab-accent-subtle: rgba(79, 70, 229, 0.06);
+    --lab-radius: 14px;
+    --lab-radius-sm: 10px;
+    --lab-radius-xs: 8px;
+    --lab-kpi-size: 44px;
+    --lab-kpi-size-lg: 56px;
+}
+
+/* Global resets */
+body {
+    font-family: var(--font-family);
+    background: var(--color-bg);
+    color: var(--color-text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+/* Monospace for data-heavy elements */
+.mono, .font-mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+
+/* Status badge helpers */
+.badge-pending   { background: var(--color-pending); color: #fff; }
+.badge-acknowledged { background: #8B5CF6; color: #fff; }
+.badge-queued    { background: #A78BFA; color: #fff; }
+.badge-running   { background: var(--color-running); color: #fff; }
+.badge-completed { background: var(--color-completed); color: #fff; }
+.badge-failed    { background: var(--color-failed); color: #fff; }
+.badge-aborted   { background: var(--color-aborted); color: #fff; }
+
+.badge-pass { background: var(--color-pass); color: #fff; }
+.badge-fail { background: var(--color-fail); color: #fff; }
+
+/* Card component */
+.card-surface {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}

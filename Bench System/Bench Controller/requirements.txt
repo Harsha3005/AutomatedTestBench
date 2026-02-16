@@ -1,0 +1,10 @@
+django==5.0
+pyserial==3.5
+pycryptodome==3.20
+channels==4.0
+daphne==4.0
+redis==5.0
+whitenoise==6.6
+Pillow
+reportlab>=4.0
+matplotlib>=3.8

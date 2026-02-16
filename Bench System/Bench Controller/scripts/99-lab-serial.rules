@@ -1,0 +1,17 @@
+# ==============================================================
+# IIITB Water Meter Calibration Lab - USB Serial Port Mapping
+# Install: sudo cp 99-lab-serial.rules /etc/udev/rules.d/
+# Reload: sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# Maps L2 Lab LoRa Bridge to a stable symlink.
+# Update KERNELS path after connecting hardware.
+#
+# To find the port path:
+#   udevadm info -a -n /dev/ttyUSB0 | grep KERNELS
+# ==============================================================
+
+# L2 — LinkMaster LoRa (SX1262 transparent bridge)
+# KERNELS path: update after physical connection
+# SUBSYSTEM=="tty", KERNELS=="1-1.2:1.0", SYMLINK+="ttyLORA"
+# Alternative: match by serial number
+# SUBSYSTEM=="tty", ATTRS{serial}=="XXXXXXXXXX", SYMLINK+="ttyLORA"

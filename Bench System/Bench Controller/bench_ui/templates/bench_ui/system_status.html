@@ -1,0 +1,424 @@
+{% extends "base_bench.html" %}
+{% load static %}
+
+{% block title %}System — IIITB Test Bench{% endblock %}
+{% block tab_system %}active{% endblock %}
+
+{% block page_title %}System Diagnostics{% endblock %}
+
+{% block page_actions %}
+    {% if user.can_configure_devices %}
+    <a href="{% url 'controller:device_config' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm" style="padding:4px 12px;min-height:28px;">
+        <i data-lucide="settings-2" class="icon-xs"></i> Configure
+    </a>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div x-data="systemStatus()" class="sys-container">
+
+    {# Shield icon for safety banner #}
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none;">
+        <symbol id="sys-ico-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+            <path d="M12 8v4"/><path d="M12 16h.01"/>
+        </symbol>
+    </svg>
+
+    <!-- Safety banner -->
+    <div x-show="testActive" x-cloak class="sys-safety-banner">
+        <svg class="sys-ico icon-sm"><use href="#sys-ico-shield"/></svg>
+        Manual controls locked — test in progress
+    </div>
+
+    <!-- P&ID Layout: SVG Schematic + HTML Sidebar -->
+    <div class="pid-container" style="flex:1;min-height:0;">
+
+        <!-- ===== SVG P&ID SCHEMATIC (U-shape layout) ===== -->
+        <svg class="pid-schematic" viewBox="0 0 850 480" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+
+            <!-- Background grid -->
+            <defs>
+                <pattern id="pid-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e2128" stroke-width="0.5"/>
+                </pattern>
+            </defs>
+            <rect width="850" height="480" fill="url(#pid-grid)" opacity="0.4"/>
+
+            <!-- ========== PIPE PATHS ========== -->
+            <g id="pid-pipes">
+                <!-- Suction: Reservoir bottom → Pump -->
+                <path d="M 70,163 V 358" class="pid-pipe" :class="pumpRunning() && 'pid-pipe--active'"/>
+
+                <!-- Pump discharge → Tee -->
+                <path d="M 90,378 H 150" class="pid-pipe" :class="pumpRunning() && 'pid-pipe--active'"/>
+
+                <!-- Bypass: Tee → up to BV-BP -->
+                <path d="M 150,376 V 273" class="pid-pipe"
+                      :class="pumpRunning() && d('BV-BP') && d('BV-BP').state === 'open' && 'pid-pipe--active'"/>
+                <!-- Bypass: above BV-BP → reservoir -->
+                <path d="M 150,247 V 100 H 115" class="pid-pipe"
+                      :class="pumpRunning() && d('BV-BP') && d('BV-BP').state === 'open' && 'pid-pipe--active'"/>
+
+                <!-- Main: Tee → SV1 -->
+                <path d="M 157,378 H 208" class="pid-pipe" :class="pumpRunning() && 'pid-pipe--active'"/>
+                <!-- Main: SV1 → DUT (through PT-01) -->
+                <path d="M 232,378 H 362" class="pid-pipe"
+                      :class="pumpRunning() && d('SV1') && d('SV1').state === 'open' && 'pid-pipe--active'"/>
+                <!-- Main: DUT → manifold turn-up (through PT-02, FT-01) -->
+                <path d="M 428,378 H 635 V 340" class="pid-pipe"
+                      :class="pumpRunning() && d('SV1') && d('SV1').state === 'open' && 'pid-pipe--active'"/>
+
+                <!-- Manifold horizontal header -->
+                <path d="M 625,340 H 765" class="pid-pipe"
+                      :class="pumpRunning() && d('SV1') && d('SV1').state === 'open' && 'pid-pipe--active'"/>
+
+                <!-- Lane 1 (1"): manifold → collection tank -->
+                <path d="M 635,340 V 118" class="pid-pipe"
+                      :class="pumpRunning() && d('SV1') && d('SV1').state === 'open' && d('BV-L1') && d('BV-L1').state === 'open' && 'pid-pipe--active'"/>
+                <!-- Lane 2 (3/4"): manifold → collection tank -->
+                <path d="M 695,340 V 118" class="pid-pipe"
+                      :class="pumpRunning() && d('SV1') && d('SV1').state === 'open' && d('BV-L2') && d('BV-L2').state === 'open' && 'pid-pipe--active'"/>
+                <!-- Lane 3 (1/2"): manifold → collection tank -->
+                <path d="M 755,340 V 118" class="pid-pipe"
+                      :class="pumpRunning() && d('SV1') && d('SV1').state === 'open' && d('BV-L3') && d('BV-L3').state === 'open' && 'pid-pipe--active'"/>
+
+                <!-- Collection tank → SV-DRN -->
+                <path d="M 775,118 V 133" class="pid-pipe"
+                      :class="d('SV-DRN') && d('SV-DRN').state === 'open' && 'pid-pipe--active'"/>
+                <!-- Drain return: SV-DRN → route outside → across top → into reservoir -->
+                <path d="M 775,153 V 175 H 810 V 8 H 70 V 25" class="pid-pipe"
+                      :class="d('SV-DRN') && d('SV-DRN').state === 'open' && 'pid-pipe--active'"
+                      style="stroke-dasharray:6 3;"/>
+                <text x="440" y="18" text-anchor="middle" class="pid-return-label">DRAIN RETURN</text>
+                <!-- Arrow into reservoir top -->
+                <polygon points="66,20 70,28 74,20" fill="#5f6368" opacity="0.5"/>
+            </g>
+
+            <!-- Section labels -->
+            <text x="400" y="450" text-anchor="middle" class="pid-section-label">MAIN LINE</text>
+            <text x="150" y="198" text-anchor="middle" class="pid-section-label" style="font-size:8px;">BYPASS</text>
+
+            <!-- ========== RESERVOIR TANK (top-left) ========== -->
+            <g transform="translate(70, 25)">
+                <rect x="-45" y="0" width="90" height="135" rx="6" class="pid-tank-outline"/>
+                <rect x="-43" width="86" rx="4" class="pid-tank-water"
+                      x-effect="$el.setAttribute('y', tankWaterY()); $el.setAttribute('height', tankWaterH())"/>
+                <text x="0" y="-8" text-anchor="middle" class="pid-label">RESERVOIR</text>
+                <text x="0" y="58" text-anchor="middle" class="pid-value-lg"
+                      x-text="fv('RES-LVL', 0) + '%'">--%</text>
+                <text x="0" y="78" text-anchor="middle" class="pid-value-sm"
+                      x-text="fv('RES-TEMP', 1) + ' °C'">-- °C</text>
+                <circle cx="0" cy="140" r="3" fill="#42A5F5" opacity="0.6"/>
+            </g>
+
+            <!-- ========== P-01 PUMP (bottom-left) ========== -->
+            <g :class="pumpRunning() && 'pid-pump--running'" transform="translate(70, 378)">
+                <circle cx="0" cy="0" r="20" class="pid-pump-body"/>
+                <polygon points="-9,-9 11,0 -9,9" class="pid-pump-arrow"/>
+                <text x="0" y="-28" text-anchor="middle" class="pid-label">P-01</text>
+                <text x="0" y="38" text-anchor="middle" class="pid-value-sm"
+                      x-text="(d('P-01') && d('P-01').frequency != null) ? d('P-01').frequency.toFixed(1) + ' Hz' : '0.0 Hz'">0.0 Hz</text>
+                <text x="0" y="50" text-anchor="middle" class="pid-value-sm"
+                      x-text="d('P-01') ? d('P-01').state : '--'"
+                      :fill="pumpRunning() ? '#42A5F5' : '#5f6368'">--</text>
+                <rect x="-24" y="-24" width="48" height="48" class="pid-touch"
+                      :class="(testActive || !canActuate) && 'pid-touch--disabled'"
+                      @click="confirmCommand('P-01', 'toggle', 'Pump P-01')"/>
+            </g>
+
+            <!-- ========== BV-BP (Bypass Valve) ========== -->
+            <g :class="valveClass('BV-BP')" transform="translate(150, 260)">
+                <polygon points="-11,-13 0,0 11,-13" class="pid-valve-body"/>
+                <polygon points="-11,13 0,0 11,13" class="pid-valve-body"/>
+                <text x="18" y="-4" class="pid-label">BV-BP</text>
+                <text x="18" y="10" class="pid-value-sm"
+                      x-text="d('BV-BP') ? d('BV-BP').state.toUpperCase() : '--'"
+                      :fill="d('BV-BP') && d('BV-BP').state === 'open' ? '#4CAF50' : '#EF5350'">--</text>
+                <rect x="-22" y="-22" width="44" height="44" class="pid-touch"
+                      :class="(testActive || !canActuate) && 'pid-touch--disabled'"
+                      @click="confirmCommand('BV-BP', 'toggle', 'Bypass Valve BV-BP')"/>
+            </g>
+
+            <!-- ========== SV1 (Main Inlet Valve) ========== -->
+            <g :class="valveClass('SV1')" transform="translate(220, 378)">
+                <polygon points="0,-12 12,0 0,12 -12,0" class="pid-solenoid-body"/>
+                <text x="0" y="-20" text-anchor="middle" class="pid-label">SV1</text>
+                <text x="0" y="24" text-anchor="middle" class="pid-value-sm"
+                      x-text="d('SV1') ? d('SV1').state.toUpperCase() : '--'"
+                      :fill="d('SV1') && d('SV1').state === 'open' ? '#4CAF50' : '#EF5350'">--</text>
+                <rect x="-22" y="-22" width="44" height="44" class="pid-touch"
+                      :class="(testActive || !canActuate) && 'pid-touch--disabled'"
+                      @click="confirmCommand('SV1', 'toggle', 'Main Inlet Valve SV1')"/>
+            </g>
+
+            <!-- ========== PT-01 (Pressure Upstream) ========== -->
+            <g transform="translate(305, 378)">
+                <line x1="0" y1="-14" x2="0" y2="0" class="pid-sensor-tap"/>
+                <circle cx="0" cy="-28" r="14" class="pid-sensor-circle"/>
+                <text x="0" y="-25" text-anchor="middle" class="pid-label-xs">PT</text>
+                <text x="0" y="-48" text-anchor="middle" class="pid-label">PT-01</text>
+                <text x="18" y="-34" class="pid-value" x-text="fv('PT-01', 2)">--</text>
+                <text x="18" y="-22" class="pid-unit">bar</text>
+            </g>
+
+            <!-- ========== DUT (Meter Under Test) ========== -->
+            <g :class="d('DUT') && d('DUT').state === 'connected' ? 'pid-dut--connected' : 'pid-dut--disconnected'" transform="translate(395, 378)"
+               @click="confirmCommand('DUT', 'toggle', 'Meter Under Test')"
+               :style="(!testActive && canActuate) ? 'cursor:pointer' : ''">
+                <rect x="-35" y="-20" width="70" height="40" rx="5" class="pid-dut-body"/>
+                <text x="0" y="-5" text-anchor="middle" class="pid-label" style="font-size:10px;fill:var(--bench-text);">DUT</text>
+                <text x="0" y="9" text-anchor="middle" class="pid-value-sm"
+                      x-text="d('DUT') ? d('DUT').state : '--'">--</text>
+                <text x="0" y="-28" text-anchor="middle" class="pid-label" style="fill:#00BCD4;font-size:7px;">MUT</text>
+            </g>
+
+            <!-- ========== PT-02 (Pressure Downstream) ========== -->
+            <g transform="translate(485, 378)">
+                <line x1="0" y1="-14" x2="0" y2="0" class="pid-sensor-tap"/>
+                <circle cx="0" cy="-28" r="14" class="pid-sensor-circle"/>
+                <text x="0" y="-25" text-anchor="middle" class="pid-label-xs">PT</text>
+                <text x="0" y="-48" text-anchor="middle" class="pid-label">PT-02</text>
+                <text x="18" y="-34" class="pid-value" x-text="fv('PT-02', 2)">--</text>
+                <text x="18" y="-22" class="pid-unit">bar</text>
+            </g>
+
+            <!-- ========== FT-01 (Reference Meter) ========== -->
+            <g transform="translate(555, 378)">
+                <line x1="0" y1="-16" x2="0" y2="0" class="pid-sensor-tap"/>
+                <circle cx="0" cy="-30" r="16" class="pid-sensor-circle" style="stroke:#00BCD4;stroke-width:1.5;"/>
+                <text x="0" y="-27" text-anchor="middle" class="pid-label-xs" style="fill:#00BCD4;">FE</text>
+                <text x="0" y="-52" text-anchor="middle" class="pid-label">FT-01</text>
+                <text x="0" y="-64" text-anchor="middle" class="pid-label" style="fill:#00BCD4;font-size:7px;">REF. METER</text>
+                <text x="20" y="-36" class="pid-value" style="font-size:12px;" x-text="fv('FT-01', 0)">--</text>
+                <text x="20" y="-24" class="pid-unit">L/h</text>
+            </g>
+
+            <!-- ========== TEST LANES (right side, 60px spacing) ========== -->
+
+            <!-- Pipe size labels above valves -->
+            <text x="635" y="278" text-anchor="middle" class="pid-lane-label">1"</text>
+            <text x="695" y="278" text-anchor="middle" class="pid-lane-label">&#190;"</text>
+            <text x="755" y="278" text-anchor="middle" class="pid-lane-label">&#189;"</text>
+
+            <!-- BV-L1 (Lane 1 — 1") -->
+            <g :class="valveClass('BV-L1')" transform="translate(635, 295)">
+                <polygon points="-10,-12 0,0 10,-12" class="pid-valve-body"/>
+                <polygon points="-10,12 0,0 10,12" class="pid-valve-body"/>
+                <text x="0" y="24" text-anchor="middle" class="pid-value-sm"
+                      x-text="d('BV-L1') ? d('BV-L1').state.toUpperCase() : '--'"
+                      :fill="d('BV-L1') && d('BV-L1').state === 'open' ? '#4CAF50' : '#EF5350'">--</text>
+                <rect x="-22" y="-22" width="44" height="48" class="pid-touch"
+                      :class="(testActive || !canActuate) && 'pid-touch--disabled'"
+                      @click="confirmCommand('BV-L1', 'toggle', 'Lane 1 Valve (1 in)')"/>
+            </g>
+
+            <!-- BV-L2 (Lane 2 — 3/4") -->
+            <g :class="valveClass('BV-L2')" transform="translate(695, 295)">
+                <polygon points="-10,-12 0,0 10,-12" class="pid-valve-body"/>
+                <polygon points="-10,12 0,0 10,12" class="pid-valve-body"/>
+                <text x="0" y="24" text-anchor="middle" class="pid-value-sm"
+                      x-text="d('BV-L2') ? d('BV-L2').state.toUpperCase() : '--'"
+                      :fill="d('BV-L2') && d('BV-L2').state === 'open' ? '#4CAF50' : '#EF5350'">--</text>
+                <rect x="-22" y="-22" width="44" height="48" class="pid-touch"
+                      :class="(testActive || !canActuate) && 'pid-touch--disabled'"
+                      @click="confirmCommand('BV-L2', 'toggle', 'Lane 2 Valve (3/4 in)')"/>
+            </g>
+
+            <!-- BV-L3 (Lane 3 — 1/2") -->
+            <g :class="valveClass('BV-L3')" transform="translate(755, 295)">
+                <polygon points="-10,-12 0,0 10,-12" class="pid-valve-body"/>
+                <polygon points="-10,12 0,0 10,12" class="pid-valve-body"/>
+                <text x="0" y="24" text-anchor="middle" class="pid-value-sm"
+                      x-text="d('BV-L3') ? d('BV-L3').state.toUpperCase() : '--'"
+                      :fill="d('BV-L3') && d('BV-L3').state === 'open' ? '#4CAF50' : '#EF5350'">--</text>
+                <rect x="-22" y="-22" width="44" height="48" class="pid-touch"
+                      :class="(testActive || !canActuate) && 'pid-touch--disabled'"
+                      @click="confirmCommand('BV-L3', 'toggle', 'Lane 3 Valve (1/2 in)')"/>
+            </g>
+
+            <!-- Rotameters (visual only, non-electronic) -->
+            <g transform="translate(635, 225)">
+                <polygon points="-4,10 4,10 7,-10 -7,-10" class="pid-rotameter"/>
+                <circle cx="0" cy="2" r="3" class="pid-rotameter-float"/>
+            </g>
+            <g transform="translate(695, 225)">
+                <polygon points="-4,10 4,10 7,-10 -7,-10" class="pid-rotameter"/>
+                <circle cx="0" cy="2" r="3" class="pid-rotameter-float"/>
+            </g>
+            <g transform="translate(755, 225)">
+                <polygon points="-4,10 4,10 7,-10 -7,-10" class="pid-rotameter"/>
+                <circle cx="0" cy="2" r="3" class="pid-rotameter-float"/>
+            </g>
+
+            <!-- ========== COLLECTION TANK (top-right, wider) ========== -->
+            <rect x="590" y="25" width="200" height="90" rx="4" class="pid-collection-tank"/>
+            <text x="690" y="48" text-anchor="middle" class="pid-label" style="font-size:8px;letter-spacing:1.5px;">COLLECTION TANK</text>
+            <text x="690" y="72" text-anchor="middle" class="pid-value-lg" x-text="fv('WT-01', 1)">--</text>
+            <text x="690" y="87" text-anchor="middle" class="pid-unit" style="font-size:10px;">kg</text>
+            <text x="690" y="103" text-anchor="middle" class="pid-label-xs">WT-01</text>
+
+            <!-- ========== SV-DRN (Drain Valve) ========== -->
+            <g :class="valveClass('SV-DRN')" transform="translate(775, 143)">
+                <polygon points="0,-10 10,0 0,10 -10,0" class="pid-solenoid-body"/>
+                <text x="-16" y="-6" text-anchor="end" class="pid-label">SV-DRN</text>
+                <text x="-16" y="8" text-anchor="end" class="pid-value-sm"
+                      x-text="d('SV-DRN') ? d('SV-DRN').state.toUpperCase() : '--'"
+                      :fill="d('SV-DRN') && d('SV-DRN').state === 'open' ? '#4CAF50' : '#EF5350'">--</text>
+                <rect x="-22" y="-22" width="44" height="44" class="pid-touch"
+                      :class="(testActive || !canActuate) && 'pid-touch--disabled'"
+                      @click="confirmCommand('SV-DRN', 'toggle', 'Drain Valve SV-DRN')"/>
+            </g>
+
+            <!-- Flow direction arrows -->
+            <!-- Suction (downward) -->
+            <polygon points="64,260 70,268 76,260"
+                     :fill="pumpRunning() ? '#42A5F5' : '#5f6368'" style="transition:fill 0.3s;"/>
+            <!-- Main line toward DUT -->
+            <polygon points="350,372 358,378 350,384"
+                     :fill="pumpRunning() && d('SV1') && d('SV1').state === 'open' ? '#42A5F5' : '#5f6368'" style="transition:fill 0.3s;"/>
+            <!-- Main line toward manifold -->
+            <polygon points="590,372 598,378 590,384"
+                     :fill="pumpRunning() && d('SV1') && d('SV1').state === 'open' ? '#42A5F5' : '#5f6368'" style="transition:fill 0.3s;"/>
+            <!-- Test lane (upward, center lane) -->
+            <polygon points="689,195 695,187 701,195"
+                     :fill="pumpRunning() && d('SV1') && d('SV1').state === 'open' ? '#42A5F5' : '#5f6368'" style="transition:fill 0.3s;"/>
+
+        </svg>
+
+        <!-- ===== HTML SIDEBAR ===== -->
+        <div class="pid-sidebar">
+
+            <!-- Environment Panel -->
+            <div class="pid-sidebar-panel">
+                <div class="pid-sidebar-title">Environment</div>
+
+                <div class="pid-env-row">
+                    <span class="pid-env-label">Air Temp</span>
+                    <span>
+                        <span class="pid-env-value" x-text="fv('ATM-TEMP', 1)">--</span>
+                        <span class="pid-env-unit">°C</span>
+                    </span>
+                </div>
+                <div class="pid-minibar">
+                    <div class="pid-minibar-fill"
+                         :style="'width:' + barPercent(d('ATM-TEMP')) + '%;background:' + barColor(d('ATM-TEMP'))"></div>
+                </div>
+
+                <div class="pid-env-row">
+                    <span class="pid-env-label">Humidity</span>
+                    <span>
+                        <span class="pid-env-value" x-text="fv('ATM-HUM', 0)">--</span>
+                        <span class="pid-env-unit">%</span>
+                    </span>
+                </div>
+                <div class="pid-minibar">
+                    <div class="pid-minibar-fill"
+                         :style="'width:' + barPercent(d('ATM-HUM')) + '%;background:' + barColor(d('ATM-HUM'))"></div>
+                </div>
+
+                <div class="pid-env-row">
+                    <span class="pid-env-label">Barometric</span>
+                    <span>
+                        <span class="pid-env-value" x-text="fv('ATM-BARO', 0)">--</span>
+                        <span class="pid-env-unit">hPa</span>
+                    </span>
+                </div>
+                <div class="pid-minibar">
+                    <div class="pid-minibar-fill"
+                         :style="'width:' + barPercent(d('ATM-BARO')) + '%;background:' + barColor(d('ATM-BARO'))"></div>
+                </div>
+            </div>
+
+            <!-- Power Panel -->
+            <div class="pid-sidebar-panel">
+                <div class="pid-sidebar-title">Power</div>
+                <div class="pid-power-row">
+                    <span class="pid-power-led"
+                          :class="d('MCB') && d('MCB').state === 'on' ? 'pid-power-led--on' : 'pid-power-led--off'"></span>
+                    <span class="pid-power-label">MCB (4P)</span>
+                </div>
+                <div class="pid-power-row">
+                    <span class="pid-power-led"
+                          :class="d('CONT') && d('CONT').state === 'on' ? 'pid-power-led--on' : 'pid-power-led--off'"></span>
+                    <span class="pid-power-label">Contactor</span>
+                </div>
+            </div>
+
+            <!-- Tower Light Panel -->
+            <div class="pid-sidebar-panel">
+                <div class="pid-sidebar-title">Tower Light</div>
+                <div style="display:flex;justify-content:center;align-items:center;gap:10px;">
+                    <button class="sys-tower-light sys-tower--red"
+                            :class="d('TOWER') && d('TOWER').red && 'sys-tower--on'"
+                            :disabled="testActive || !canActuate"
+                            @click="sendCommand('TOWER', 'red')">R</button>
+                    <button class="sys-tower-light sys-tower--green"
+                            :class="d('TOWER') && d('TOWER').green && 'sys-tower--on'"
+                            :disabled="testActive || !canActuate"
+                            @click="sendCommand('TOWER', 'green')">G</button>
+                    <button class="sys-tower-buzzer"
+                            :class="d('TOWER') && d('TOWER').buzzer && 'sys-tower-buzzer--on'"
+                            :disabled="testActive || !canActuate"
+                            @click="sendCommand('TOWER', 'buzzer')"
+                            title="Buzzer">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Communications Panel -->
+            <div class="pid-sidebar-panel" style="flex:1;">
+                <div class="pid-sidebar-title">Communications</div>
+                <div class="pid-comm-row">
+                    <span class="pid-comm-led"
+                          :class="d('LORA') && d('LORA').state === 'online' ? 'pid-comm-led--online' : 'pid-comm-led--offline'"></span>
+                    <span class="pid-comm-label">LoRa</span>
+                    <span class="pid-comm-status"
+                          :style="'color:' + (d('LORA') && d('LORA').state === 'online' ? '#4CAF50' : '#EF5350')"
+                          x-text="d('LORA') ? d('LORA').state : '--'">--</span>
+                </div>
+                <div class="pid-comm-row">
+                    <span class="pid-comm-led"
+                          :class="d('BUS1') && d('BUS1').state === 'online' ? 'pid-comm-led--online' : 'pid-comm-led--offline'"></span>
+                    <span class="pid-comm-label">Bus 1</span>
+                    <span class="pid-comm-status"
+                          :style="'color:' + (d('BUS1') && d('BUS1').state === 'online' ? '#4CAF50' : '#EF5350')"
+                          x-text="d('BUS1') ? d('BUS1').state : '--'">--</span>
+                </div>
+                <div class="pid-comm-row">
+                    <span class="pid-comm-led"
+                          :class="d('BUS2') && d('BUS2').state === 'online' ? 'pid-comm-led--online' : 'pid-comm-led--offline'"></span>
+                    <span class="pid-comm-label">Bus 2</span>
+                    <span class="pid-comm-status"
+                          :style="'color:' + (d('BUS2') && d('BUS2').state === 'online' ? '#4CAF50' : '#EF5350')"
+                          x-text="d('BUS2') ? d('BUS2').state : '--'">--</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Confirm / Error dialog -->
+    <div x-show="confirmOpen" x-cloak class="sys-confirm-overlay" @click.self="confirmOpen = false">
+        <div class="sys-confirm-dialog">
+            <div class="sys-confirm-title" x-text="pendingAction ? 'Confirm Action' : 'Safety Interlock'"></div>
+            <p class="sys-confirm-msg" x-text="confirmMsg"></p>
+            <div class="sys-confirm-actions">
+                <button class="btn-hmi btn-hmi-ghost" @click="confirmOpen = false"
+                        x-text="pendingAction ? 'Cancel' : 'OK'">Cancel</button>
+                <button x-show="pendingAction" class="btn-hmi btn-hmi-warning" @click="executeConfirmed()">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% csrf_token %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/bench_system.js' %}"></script>
+{% endblock %}

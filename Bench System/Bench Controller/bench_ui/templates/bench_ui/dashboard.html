@@ -1,0 +1,260 @@
+{% extends "base_bench.html" %}
+{% load static %}
+
+{% block title %}Dashboard — IIITB Test Bench{% endblock %}
+{% block tab_dashboard %}active{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div x-data="dashStatus()" x-init="startPolling()" style="height:100%;display:flex;flex-direction:column;gap:4px;">
+
+    <!-- ROW 0: Status Strip -->
+    <div style="display:flex;gap:4px;flex-shrink:0;">
+        <template x-for="item in statusItems" :key="item.label">
+            <div class="dash-status-pill" :class="'dash-status-pill--' + item.state">
+                <span class="dash-status-pill-dot" :class="'dash-status-pill-dot--' + item.state"></span>
+                <span x-text="item.label" style="font-size:10px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;"></span>
+            </div>
+        </template>
+    </div>
+
+    <!-- ROW 1: System Status + Current Test + Quick Stats -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;flex-shrink:0;">
+
+        <!-- System Status -->
+        <div class="hmi-card" style="padding:8px 10px;">
+            <div class="hmi-card-title" style="margin-bottom:6px;">System Status</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+                <div class="dash-status-item">
+                    <span class="status-led status-led--ok"><i data-lucide="heart-pulse" style="width:10px;height:10px;"></i></span>
+                    <div>
+                        <div class="dash-status-label">System</div>
+                        <div class="dash-status-value">Online</div>
+                    </div>
+                </div>
+                <div class="dash-status-item">
+                    <span class="status-led"><i data-lucide="radio" style="width:10px;height:10px;"></i></span>
+                    <div>
+                        <div class="dash-status-label">LoRa Link</div>
+                        <div class="dash-status-value">Standby</div>
+                    </div>
+                </div>
+                <div class="dash-status-item">
+                    <span class="status-led status-led--ok"><i data-lucide="database" style="width:10px;height:10px;"></i></span>
+                    <div>
+                        <div class="dash-status-label">Database</div>
+                        <div class="dash-status-value">Connected</div>
+                    </div>
+                </div>
+                <div class="dash-status-item">
+                    <span class="status-led status-led--ok"><i data-lucide="cpu" style="width:10px;height:10px;"></i></span>
+                    <div>
+                        <div class="dash-status-label">Bench HW</div>
+                        <div class="dash-status-value">Simulator</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Current Test -->
+        <div class="hmi-card" style="padding:8px 10px;">
+            <div class="hmi-card-title" style="margin-bottom:6px;">Current Test</div>
+            {% if active_test %}
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <span class="hmi-badge hmi-badge--{{ active_test.status }}">{{ active_test.get_status_display }}</span>
+                <span style="font-size:14px;font-weight:600;">Test #{{ active_test.pk }}</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:11px;">
+                <div><span style="color:var(--bench-text-dim);">Meter:</span> {{ active_test.meter.serial_number }}</div>
+                <div><span style="color:var(--bench-text-dim);">Size:</span> {{ active_test.meter.meter_size }}</div>
+                {% if active_test.current_q_point %}
+                <div><span style="color:var(--bench-text-dim);">Q-Point:</span> <span class="text-accent">{{ active_test.current_q_point }}</span></div>
+                {% endif %}
+                {% if active_test.current_state %}
+                <div><span style="color:var(--bench-text-dim);">State:</span> <span class="text-accent">{{ active_test.current_state }}</span></div>
+                {% endif %}
+            </div>
+            <a href="{% url 'bench_ui:test_control_live' active_test.pk %}"
+               class="btn-hmi btn-hmi-primary btn-hmi-sm" style="width:100%;margin-top:6px;min-height:30px;font-size:12px;">
+                <i data-lucide="monitor" style="width:14px;height:14px;"></i> View Live
+            </a>
+            {% else %}
+            <div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 0;color:var(--bench-text-muted);">
+                <i data-lucide="pause-circle" style="width:24px;height:24px;opacity:0.3;"></i>
+                <span style="font-size:12px;">No active test</span>
+            </div>
+            <a href="{% url 'bench_ui:test_wizard' %}"
+               class="btn-hmi btn-hmi-success" style="width:100%;min-height:36px;font-size:13px;font-weight:700;animation:start-pulse 2s ease-in-out infinite;">
+                <i data-lucide="play-circle" style="width:16px;height:16px;"></i> START TEST
+            </a>
+            {% endif %}
+        </div>
+
+        <!-- Quick Stats + Last Test -->
+        <div class="hmi-card" style="padding:8px 10px;">
+            <div class="hmi-card-title" style="margin-bottom:6px;">Overview</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+                <div class="dash-stat-box">
+                    <div class="dash-stat-number">{{ stats.total_tests }}</div>
+                    <div class="dash-stat-label">Total Tests</div>
+                </div>
+                <div class="dash-stat-box">
+                    <div class="dash-stat-number">{{ stats.registered_meters }}</div>
+                    <div class="dash-stat-label">Meters</div>
+                </div>
+                <div class="dash-stat-box">
+                    <div class="dash-stat-number" style="color:var(--bench-success);">{{ stats.passed }}</div>
+                    <div class="dash-stat-label">Passed</div>
+                </div>
+                <div class="dash-stat-box">
+                    <div class="dash-stat-number" style="color:var(--bench-danger);">{{ stats.failed }}</div>
+                    <div class="dash-stat-label">Failed</div>
+                </div>
+            </div>
+            {% if last_test %}
+            <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--bench-card-border);">
+                <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:600;margin-bottom:3px;">Last Completed</div>
+                <div style="display:flex;align-items:center;gap:6px;font-size:11px;">
+                    {% if last_test.overall_pass %}
+                    <span class="hmi-badge hmi-badge--pass">PASS</span>
+                    {% elif last_test.overall_pass == False %}
+                    <span class="hmi-badge hmi-badge--fail">FAIL</span>
+                    {% else %}
+                    <span class="hmi-badge hmi-badge--pending">—</span>
+                    {% endif %}
+                    <span>Test #{{ last_test.pk }}</span>
+                    <span style="color:var(--bench-text-dim);">{{ last_test.meter.serial_number }}</span>
+                    <span class="mono" style="color:var(--bench-text-dim);font-size:10px;margin-left:auto;">{{ last_test.completed_at|date:"d M H:i" }}</span>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ROW 2: Quick Actions bar -->
+    <div style="display:flex;gap:4px;flex-shrink:0;">
+        <a href="{% url 'bench_ui:test_wizard' %}" class="btn-hmi btn-hmi-primary btn-hmi-sm"
+           style="flex:1;min-height:32px;font-size:12px;">
+            <i data-lucide="play-circle" style="width:14px;height:14px;"></i> New Test
+        </a>
+        <a href="{% url 'meters:meter_create' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm"
+           style="flex:1;min-height:32px;font-size:12px;">
+            <i data-lucide="plus-circle" style="width:14px;height:14px;"></i> Register Meter
+        </a>
+        <a href="{% url 'meters:meter_list' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm"
+           style="flex:1;min-height:32px;font-size:12px;">
+            <i data-lucide="gauge" style="width:14px;height:14px;"></i> Meters
+        </a>
+        <a href="{% url 'testing:test_list' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm"
+           style="flex:1;min-height:32px;font-size:12px;">
+            <i data-lucide="clipboard-list" style="width:14px;height:14px;"></i> Test History
+        </a>
+        <a href="{% url 'bench_ui:system_status' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm"
+           style="flex:1;min-height:32px;font-size:12px;">
+            <i data-lucide="cpu" style="width:14px;height:14px;"></i> System
+        </a>
+    </div>
+
+    <!-- ROW 3: Recent Tests (scrollable) -->
+    <div class="hmi-card" style="flex:1;padding:8px 10px;display:flex;flex-direction:column;overflow:hidden;">
+        <div class="hmi-card-title" style="margin-bottom:4px;flex-shrink:0;">Recent Tests</div>
+        <div style="overflow-y:auto;flex:1;">
+            <table class="hmi-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Meter</th>
+                        <th>Class</th>
+                        <th>Status</th>
+                        <th>Result</th>
+                        <th>Initiated By</th>
+                        <th>Created</th>
+                        <th>Approval</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for test in recent_tests %}
+                    <tr onclick="location.href='{% url 'testing:test_detail' test.pk %}'" style="cursor:pointer;">
+                        <td style="font-weight:500;">{{ test.pk }}</td>
+                        <td>{{ test.meter.serial_number }} ({{ test.meter.meter_size }})</td>
+                        <td>{{ test.get_test_class_display|default:"—" }}</td>
+                        <td>
+                            <span class="hmi-badge hmi-badge--{{ test.status }}">{{ test.get_status_display }}</span>
+                        </td>
+                        <td>
+                            {% if test.overall_pass == True %}
+                            <span class="hmi-badge hmi-badge--pass">PASS</span>
+                            {% elif test.overall_pass == False %}
+                            <span class="hmi-badge hmi-badge--fail">FAIL</span>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td>{% if test.initiated_by %}{{ test.initiated_by.full_name|default:test.initiated_by.username }}{% else %}—{% endif %}</td>
+                        <td class="mono" style="font-size:11px;">{{ test.created_at|date:"d M H:i" }}</td>
+                        <td>
+                            <span class="hmi-badge hmi-badge--{{ test.approval_status }}">
+                                {{ test.get_approval_status_display }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8" style="text-align:center;padding:16px;color:var(--bench-text-muted);">No tests yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function dashStatus() {
+    return {
+        statusItems: [
+            { label: 'System', state: 'ok' },
+            { label: 'LoRa', state: 'standby' },
+            { label: 'Bus 1', state: 'ok' },
+            { label: 'Bus 2', state: 'ok' },
+            { label: 'Reservoir', state: 'ok' },
+            { label: 'Power', state: 'ok' },
+        ],
+        pollTimer: null,
+        startPolling() {
+            this.fetchStatus();
+            this.pollTimer = setInterval(() => this.fetchStatus(), 5000);
+        },
+        async fetchStatus() {
+            try {
+                const resp = await fetch('{% url "bench_ui:system_api_status" %}');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                // Update status items from device data
+                for (const group of data.groups || []) {
+                    for (const dev of group.devices || []) {
+                        if (dev.device_id === 'LORA') {
+                            this.updateItem('LoRa', dev.state === 'online' ? 'ok' : 'warn');
+                        } else if (dev.device_id === 'BUS1') {
+                            this.updateItem('Bus 1', dev.state === 'online' ? 'ok' : 'warn');
+                        } else if (dev.device_id === 'BUS2') {
+                            this.updateItem('Bus 2', dev.state === 'online' ? 'ok' : 'warn');
+                        } else if (dev.device_id === 'RES-LVL') {
+                            const level = dev.value ?? 0;
+                            this.updateItem('Reservoir', level > 50 ? 'ok' : level > 30 ? 'warn' : 'danger');
+                        } else if (dev.device_id === 'MCB') {
+                            this.updateItem('Power', dev.state === 'online' ? 'ok' : 'danger');
+                        }
+                    }
+                }
+            } catch (e) {
+                // Silently fail
+            }
+        },
+        updateItem(label, state) {
+            const item = this.statusItems.find(i => i.label === label);
+            if (item) item.state = state;
+        },
+    };
+}
+</script>
+{% endblock %}

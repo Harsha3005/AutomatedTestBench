@@ -1,0 +1,175 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1024, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{% block title %}IIITB Test Bench{% endblock %}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+    <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
+    <link rel="stylesheet" href="{% static 'css/bench_hmi.css' %}">
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="bench-hmi" data-theme="{% if bench_settings %}{{ bench_settings.theme }}{% else %}dark{% endif %}" data-active-test="{% if bench_has_active_test %}true{% else %}false{% endif %}" data-can-actuate="{% if user.can_actuate %}true{% else %}false{% endif %}">
+    {% block body %}
+    <!-- TOP STATUS BAR -->
+    <header class="bench-status-bar">
+        <div class="status-bar-left">
+            <span class="status-bar-logo">
+                <i data-lucide="gauge" class="icon-sm"></i>
+                I.R.A.S Test Bench
+            </span>
+        </div>
+        <div class="status-bar-center">
+            {% block status_indicators %}
+            <span class="status-led status-led--ok" title="System">
+                <i data-lucide="heart-pulse" class="icon-xs"></i> SYS
+            </span>
+            <span class="status-led" id="lora-status" title="LoRa Link">
+                <i data-lucide="radio" class="icon-xs"></i> LoRa
+            </span>
+            <span class="status-led status-led--ok" id="db-status" title="Database">
+                <i data-lucide="database" class="icon-xs"></i> DB
+            </span>
+            {% endblock %}
+        </div>
+        <div class="status-bar-right">
+            <span class="status-bar-time mono" id="bench-clock"></span>
+            {% if user.is_authenticated %}
+            <span class="status-bar-user">
+                <i data-lucide="user" class="icon-xs"></i>
+                {{ user.username }}
+            </span>
+            <a href="{% url 'bench_ui:lock_screen' %}" class="status-bar-btn status-bar-btn--lock" title="Lock Bench">
+                <i data-lucide="lock" class="icon-xs"></i>
+            </a>
+            <a href="{% url 'accounts:logout' %}" class="status-bar-btn status-bar-btn--danger" title="Logout">
+                <i data-lucide="log-out" class="icon-xs"></i>
+            </a>
+            {% endif %}
+        </div>
+    </header>
+
+    <!-- TOAST MESSAGES -->
+    {% if messages %}
+    <div class="bench-toast-container" id="bench-toasts">
+        {% for message in messages %}
+        <div class="bench-toast bench-toast--{{ message.tags }}" role="alert">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- MAIN CONTENT AREA -->
+    <main class="bench-main">
+        <div class="bench-page-header">
+            <h1 class="bench-page-title">{% block page_title %}{% endblock %}</h1>
+            <div class="bench-page-header-actions">{% block page_actions %}{% endblock %}</div>
+        </div>
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- FLOATING E-STOP (visible only when test/pump active) -->
+    {% if bench_has_active_test %}
+    <form method="post" action="{% url 'bench_ui:emergency_stop' %}" id="estop-form">
+        {% csrf_token %}
+        <button type="submit" class="floating-estop" title="Emergency Stop"
+                onclick="return confirm('EMERGENCY STOP — This will abort the running test and stop all pumps. Continue?');">
+            <i data-lucide="octagon"></i>
+            STOP
+        </button>
+    </form>
+    {% endif %}
+
+    <!-- BOTTOM TAB BAR -->
+    <nav class="bench-tab-bar">
+        <a href="{% url 'bench_ui:dashboard' %}" class="bench-tab {% block tab_dashboard %}{% endblock %}">
+            <i data-lucide="layout-dashboard"></i>
+            <span>Dashboard</span>
+        </a>
+        <a href="{% url 'bench_ui:test_control' %}" class="bench-tab {% block tab_test %}{% endblock %}">
+            <i data-lucide="play-circle"></i>
+            <span>Test</span>
+        </a>
+        <a href="{% url 'meters:meter_list' %}" class="bench-tab {% block tab_meters %}{% endblock %}">
+            <i data-lucide="gauge"></i>
+            <span>Meters</span>
+        </a>
+        <a href="{% url 'testing:test_list' %}" class="bench-tab {% block tab_history %}{% endblock %}">
+            <i data-lucide="clipboard-list"></i>
+            <span>History</span>
+        </a>
+        <a href="{% url 'bench_ui:system_status' %}" class="bench-tab {% block tab_system %}{% endblock %}">
+            <i data-lucide="cpu"></i>
+            <span>System</span>
+        </a>
+        <a href="{% url 'bench_ui:settings' %}" class="bench-tab {% block tab_settings %}{% endblock %}">
+            <i data-lucide="settings"></i>
+            <span>Settings</span>
+        </a>
+    </nav>
+    {% endblock body %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script>
+        lucide.createIcons();
+
+        // Clock
+        function updateClock() {
+            const el = document.getElementById('bench-clock');
+            if (el) el.textContent = new Date().toLocaleTimeString('en-IN', {
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                hour12: {% if bench_settings and bench_settings.datetime_format == '12h' %}true{% else %}false{% endif %}
+            });
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // Auto-dismiss toasts after 4s
+        document.querySelectorAll('.bench-toast').forEach(t => {
+            setTimeout(() => t.classList.add('bench-toast--hide'), 4000);
+            setTimeout(() => t.remove(), 4500);
+        });
+
+        // Auto-lockout: lock bench after 5 minutes of idle when no test is running
+        (function() {
+            var IDLE_TIMEOUT = {{ bench_settings.auto_lock_timeout|default:"300" }} * 1000;
+            if (IDLE_TIMEOUT <= 0) return; // 0 = disabled
+
+            var idleTimer = null;
+            var lockUrl = '{% url "bench_ui:lock_screen" %}';
+
+            function resetIdleTimer() {
+                if (idleTimer) clearTimeout(idleTimer);
+                idleTimer = setTimeout(function() {
+                    var hasActiveTest = document.body.getAttribute('data-active-test') === 'true';
+                    if (!hasActiveTest) {
+                        window.location.href = lockUrl;
+                    } else {
+                        resetIdleTimer();
+                    }
+                }, IDLE_TIMEOUT);
+            }
+
+            ['touchstart', 'touchend', 'click', 'mousemove', 'keydown'].forEach(function(evt) {
+                document.addEventListener(evt, resetIdleTimer, { passive: true });
+            });
+
+            resetIdleTimer();
+        })();
+    </script>
+
+    <script src="{% static 'js/bench_touch.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

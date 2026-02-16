@@ -1,0 +1,72 @@
+{% extends "base_bench.html" %}
+
+{% block title %}Test Control{% endblock %}
+{% block tab_test %}active{% endblock %}
+
+{% block content %}
+<div class="bench-grid" style="grid-template-columns:1fr 1fr;height:100%;">
+
+    <!-- Active Test -->
+    <div class="hmi-card">
+        <div class="hmi-card-title">Active Test</div>
+        {% if active_test %}
+        <div style="margin-bottom:12px;">
+            <span class="hmi-badge hmi-badge--{{ active_test.status }}" style="font-size:13px;padding:5px 14px;">
+                {{ active_test.get_status_display }}
+            </span>
+        </div>
+        <table class="hmi-table" style="margin-bottom:12px;">
+            <tbody>
+                <tr><td style="color:var(--bench-text-muted);">Test</td><td style="font-weight:600;">#{{ active_test.pk }}</td></tr>
+                <tr><td style="color:var(--bench-text-muted);">Meter</td><td>{{ active_test.meter.serial_number }}</td></tr>
+                <tr><td style="color:var(--bench-text-muted);">Size/Class</td><td>{{ active_test.meter.meter_size }} {{ active_test.meter.meter_class }}</td></tr>
+                {% if active_test.current_q_point %}
+                <tr><td style="color:var(--bench-text-muted);">Q-Point</td><td class="text-accent mono">{{ active_test.current_q_point }}</td></tr>
+                {% endif %}
+                {% if active_test.current_state %}
+                <tr><td style="color:var(--bench-text-muted);">State</td><td class="text-accent mono">{{ active_test.current_state }}</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+        <a href="{% url 'bench_ui:test_control_live' active_test.pk %}"
+           class="btn-hmi btn-hmi-primary" style="width:100%;">
+            <i data-lucide="monitor" class="icon-sm"></i> Open Live View
+        </a>
+        {% else %}
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;color:var(--bench-text-muted);">
+            <i data-lucide="pause-circle" style="width:48px;height:48px;margin-bottom:12px;opacity:0.3;"></i>
+            <span style="font-size:15px;margin-bottom:16px;">No active test running</span>
+            <a href="{% url 'bench_ui:test_wizard' %}" class="btn-hmi btn-hmi-primary">
+                <i data-lucide="play-circle" class="icon-sm"></i> Create New Test
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Pending Tests -->
+    <div class="hmi-card">
+        <div class="hmi-card-title">Pending Tests</div>
+        {% for test in pending_tests %}
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:6px;background:var(--bench-surface);margin-bottom:4px;">
+            <div>
+                <span style="font-weight:600;">Test #{{ test.pk }}</span>
+                <span style="color:var(--bench-text-muted);margin-left:6px;font-size:12px;">{{ test.meter.serial_number }}</span>
+                <span style="color:var(--bench-text-dim);margin-left:4px;font-size:11px;">{{ test.meter.meter_size }}</span>
+            </div>
+            <div style="display:flex;gap:4px;">
+                <a href="{% url 'testing:test_detail' test.pk %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm">View</a>
+            </div>
+        </div>
+        {% empty %}
+        <p class="text-hmi-muted" style="text-align:center;padding:24px;">No pending tests.</p>
+        {% endfor %}
+
+        <div style="margin-top:12px;">
+            <a href="{% url 'bench_ui:test_wizard' %}" class="btn-hmi btn-hmi-ghost" style="width:100%;">
+                <i data-lucide="plus" class="icon-sm"></i> Create Test
+            </a>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

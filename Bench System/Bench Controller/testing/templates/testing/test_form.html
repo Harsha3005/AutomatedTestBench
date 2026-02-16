@@ -1,0 +1,187 @@
+{% extends base_template %}
+
+{% block title %}New Test{% endblock %}
+{% block tab_test %}active{% endblock %}
+{% block nav_tests %}active{% endblock %}
+{% block page_title %}Create New Test{% endblock %}
+
+{% block content %}
+{% if is_bench %}
+{# ── Bench: centered compact form ── #}
+<div style="display:flex;justify-content:center;align-items:flex-start;height:100%;">
+    <div class="hmi-card" style="width:440px;padding:12px 16px;">
+
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:700;margin-bottom:10px;">
+            <i data-lucide="play-circle" style="width:12px;height:12px;vertical-align:-2px;"></i>
+            New Calibration Test
+        </div>
+
+        <form method="post">
+            {% csrf_token %}
+
+            <!-- Meter + Class in 2-column grid -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-bottom:10px;">
+                <div style="grid-column:1/-1;">
+                    <label for="meter_id" class="hmi-label" style="margin-bottom:3px;">Select Meter</label>
+                    <select name="meter_id" id="meter_id" class="hmi-select"
+                            style="padding:6px 8px;font-size:13px;" required>
+                        <option value="">— Choose a registered meter —</option>
+                        {% for meter in meters %}
+                        <option value="{{ meter.pk }}"
+                                {% if request.GET.meter == meter.pk|stringformat:"d" %}selected{% endif %}
+                                data-size="{{ meter.meter_size }}"
+                                data-class="{{ meter.meter_class }}"
+                                data-type="{{ meter.get_meter_type_display }}"
+                                data-manufacturer="{{ meter.manufacturer|default:'—' }}">
+                            {{ meter.serial_number }} — {{ meter.meter_size }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="test_class" class="hmi-label" style="margin-bottom:3px;">Test Class</label>
+                    <select name="test_class" id="test_class" class="hmi-select"
+                            style="padding:6px 8px;font-size:13px;" required>
+                        {% for value, label in class_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <div style="font-size:9px;color:var(--bench-text-dim);margin-top:2px;">
+                        Metrological class for this test
+                    </div>
+                </div>
+
+                <div>
+                    <label class="hmi-label" style="margin-bottom:3px;">Meter Size</label>
+                    <div id="preview-size" class="mono"
+                         style="font-size:13px;color:var(--bench-text);padding:6px 8px;background:var(--bench-surface);border:1px solid var(--bench-card-border);border-radius:4px;">
+                        —
+                    </div>
+                </div>
+            </div>
+
+            <!-- Meter info preview -->
+            <div id="meter-preview" style="display:none;margin-bottom:10px;">
+                <div style="background:var(--bench-surface);border:1px solid var(--bench-card-border);
+                            border-radius:4px;padding:6px 10px;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 16px;">
+                        <div>
+                            <div style="font-size:8px;text-transform:uppercase;color:var(--bench-text-dim);letter-spacing:0.5px;">Registered Class</div>
+                            <div id="preview-class" class="mono" style="font-size:12px;color:var(--bench-text);">—</div>
+                        </div>
+                        <div>
+                            <div style="font-size:8px;text-transform:uppercase;color:var(--bench-text-dim);letter-spacing:0.5px;">Type</div>
+                            <div id="preview-type" style="font-size:12px;color:var(--bench-text);">—</div>
+                        </div>
+                        <div>
+                            <div style="font-size:8px;text-transform:uppercase;color:var(--bench-text-dim);letter-spacing:0.5px;">Manufacturer</div>
+                            <div id="preview-mfr" style="font-size:12px;color:var(--bench-text);">—</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <p style="font-size:11px;color:var(--bench-text-dim);margin:0 0 12px 0;line-height:1.4;">
+                <i data-lucide="info" style="width:11px;height:11px;vertical-align:-2px;"></i>
+                Q-point test parameters (Q1–Q8) will be auto-populated from ISO 4064 based on the selected meter size and test class.
+            </p>
+
+            <div style="display:flex;gap:8px;justify-content:center;">
+                <button type="submit" class="btn-hmi btn-hmi-primary btn-hmi-sm"
+                        style="min-height:34px;padding:6px 28px;font-size:13px;">
+                    <i data-lucide="play" style="width:14px;height:14px;"></i> Create Test
+                </button>
+                <a href="{% url 'testing:test_list' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm"
+                   style="min-height:34px;padding:6px 28px;font-size:13px;">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+(function() {
+    var meterSel = document.getElementById('meter_id');
+    var classSel = document.getElementById('test_class');
+    var preview = document.getElementById('meter-preview');
+    var sizeEl = document.getElementById('preview-size');
+    if (!meterSel || !classSel) return;
+
+    meterSel.addEventListener('change', function() {
+        var opt = meterSel.options[meterSel.selectedIndex];
+        if (!opt.value) {
+            if (preview) preview.style.display = 'none';
+            if (sizeEl) sizeEl.textContent = '—';
+            return;
+        }
+        // Show size
+        if (sizeEl) sizeEl.textContent = opt.dataset.size || '—';
+        // Default test class to meter's registered class
+        var regClass = opt.dataset['class'];
+        if (regClass) {
+            for (var i = 0; i < classSel.options.length; i++) {
+                if (classSel.options[i].value === regClass) {
+                    classSel.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+        // Show preview
+        if (preview) {
+            document.getElementById('preview-class').textContent = regClass || '—';
+            document.getElementById('preview-type').textContent = opt.dataset.type || '—';
+            document.getElementById('preview-mfr').textContent = opt.dataset.manufacturer || '—';
+            preview.style.display = 'block';
+        }
+        lucide.createIcons();
+    });
+
+    // Trigger on load if pre-selected
+    if (meterSel.value) meterSel.dispatchEvent(new Event('change'));
+})();
+</script>
+{% endblock %}
+
+{% else %}
+{# ── Lab: clean centered form ── #}
+<div style="display:flex;justify-content:center;">
+    <div class="lab-card" style="max-width:500px;width:100%;">
+        <h3 class="lab-card-title" style="margin-bottom:16px;">New Calibration Test</h3>
+        <form method="post">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label for="meter_id" class="form-label">Select Meter</label>
+                <select name="meter_id" id="meter_id" class="form-select" required>
+                    <option value="">— Choose a registered meter —</option>
+                    {% for meter in meters %}
+                    <option value="{{ meter.pk }}" {% if request.GET.meter == meter.pk|stringformat:"d" %}selected{% endif %}>
+                        {{ meter.serial_number }} ({{ meter.meter_size }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label for="test_class" class="form-label">Test Class</label>
+                <select name="test_class" id="test_class" class="form-select" required>
+                    {% for value, label in class_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <small class="text-muted">Metrological class standard to test against</small>
+            </div>
+
+            <p style="font-size:13px;color:var(--color-text-muted);">
+                Q1–Q8 test points will be auto-populated from ISO 4064 based on the selected meter size and test class.
+            </p>
+
+            <div style="display:flex;gap:8px;margin-top:16px;">
+                <button type="submit" class="btn btn-primary">Create Test</button>
+                <a href="{% url 'testing:test_list' %}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

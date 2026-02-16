@@ -1,0 +1,172 @@
+{% extends base_template %}
+
+{% block title %}Dashboard{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}Water Meter Calibration Lab Overview{% endblock %}
+{% block page_actions %}
+<a href="{% url 'lab_ui:test_wizard' %}" class="btn-lab btn-lab-primary">
+    <i data-lucide="play-circle"></i> New Test
+</a>
+{% endblock %}
+
+{% block content %}
+<!-- Stat Cards -->
+<div class="lab-stats-grid">
+    <div class="lab-stat-card">
+        <div class="lab-stat-icon lab-stat-icon--primary">
+            <i data-lucide="clipboard-check"></i>
+        </div>
+        <div class="lab-stat-value">{{ today_completed }}<span class="lab-stat-secondary">/{{ today_total }}</span></div>
+        <div class="lab-stat-label">Tests Today</div>
+    </div>
+    <div class="lab-stat-card">
+        <div class="lab-stat-icon lab-stat-icon--warning">
+            <i data-lucide="clock"></i>
+        </div>
+        <div class="lab-stat-value">{{ pending_approvals }}</div>
+        <div class="lab-stat-label">Pending Approvals</div>
+    </div>
+    <div class="lab-stat-card">
+        <div class="lab-stat-icon lab-stat-icon--info">
+            <i data-lucide="gauge"></i>
+        </div>
+        <div class="lab-stat-value">{{ total_meters }}</div>
+        <div class="lab-stat-label">Registered Meters</div>
+    </div>
+    <div class="lab-stat-card">
+        <div class="lab-stat-icon lab-stat-icon--success">
+            <i data-lucide="trending-up"></i>
+        </div>
+        <div class="lab-stat-value">{{ pass_rate }}%</div>
+        <div class="lab-stat-label">Pass Rate</div>
+    </div>
+</div>
+
+<!-- Active Test + Communication Status -->
+<div class="lab-grid-3-1 lab-mb-lg">
+    <!-- Active Test -->
+    <div class="lab-card">
+        <div class="lab-card-header">
+            <span class="lab-card-title"><i data-lucide="activity"></i> Active Test</span>
+            {% if active_test %}
+            <span class="lab-badge lab-badge--dot lab-badge--{{ active_test.status }}">{{ active_test.get_status_display }}</span>
+            {% endif %}
+        </div>
+        {% if active_test %}
+        <div class="lab-flex-gap lab-mb-md">
+            <div>
+                <div class="lab-stat-value" style="font-size:32px;">Test #{{ active_test.pk }}</div>
+                <div class="lab-text-muted lab-text-sm">{{ active_test.meter.serial_number }} ({{ active_test.meter.meter_size }})</div>
+            </div>
+            {% if active_test.current_q_point %}
+            <div style="flex:1;">
+                <div class="lab-text-muted lab-text-sm lab-mb-sm">
+                    Q-Point {{ active_test.current_q_point }} of 8
+                    {% if active_test.current_state %}&mdash; {{ active_test.current_state }}{% endif %}
+                </div>
+                <div style="background:var(--lab-content-bg);border-radius:8px;height:8px;overflow:hidden;">
+                    <div style="background:var(--lab-accent);height:100%;border-radius:8px;width:{% widthratio active_test.current_q_point 8 100 %}%;transition:width 0.5s;"></div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        <a href="{% url 'lab_ui:live_monitor' active_test.pk %}" class="btn-lab btn-lab-primary btn-lab-sm">
+            <i data-lucide="radio"></i> Monitor
+        </a>
+        {% else %}
+        <div class="lab-empty-state">
+            <i data-lucide="inbox"></i>
+            <p>No test currently running</p>
+            <a href="{% url 'lab_ui:test_wizard' %}" class="btn-lab btn-lab-primary btn-lab-sm">
+                <i data-lucide="play-circle"></i> Start New Test
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Quick Info Stack -->
+    <div>
+        <!-- Communication Status -->
+        <div class="lab-card lab-mb-md">
+            <div class="lab-card-header">
+                <span class="lab-card-title"><i data-lucide="radio"></i> Communication</span>
+            </div>
+            <div class="lab-flex-gap lab-mb-md">
+                <div class="lab-status-led lab-status-led--{{ link_status }}"></div>
+                <div>
+                    <div class="lab-text-bold" style="text-transform:capitalize;">{{ link_status }}</div>
+                    <div class="lab-text-muted lab-text-xs">LoRa Link (865 MHz)</div>
+                </div>
+            </div>
+            <div class="lab-text-sm lab-text-muted" style="line-height:2;">
+                <div class="lab-flex-between"><span>Protocol</span><span class="lab-text-bold" style="color:var(--color-text);">ASP v1</span></div>
+                <div class="lab-flex-between"><span>Encryption</span><span class="lab-text-bold" style="color:var(--color-text);">AES-256</span></div>
+            </div>
+        </div>
+
+        <!-- Week Summary -->
+        <div class="lab-card">
+            <div class="lab-card-header">
+                <span class="lab-card-title"><i data-lucide="calendar"></i> This Week</span>
+            </div>
+            <div class="lab-stat-value" style="font-size:32px;">{{ week_tests }}</div>
+            <div class="lab-stat-label">Tests Submitted</div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Tests -->
+<div class="lab-card">
+    <div class="lab-card-header">
+        <span class="lab-card-title"><i data-lucide="clock"></i> Recent Tests</span>
+        <a href="{% url 'testing:test_list' %}" class="btn-lab btn-lab-secondary btn-lab-sm">View All</a>
+    </div>
+    <div class="lab-overflow-x">
+        <table class="lab-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Meter</th>
+                    <th>Size</th>
+                    <th>Status</th>
+                    <th>Result</th>
+                    <th>Source</th>
+                    <th>Created</th>
+                    <th>Approval</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for test in recent_tests %}
+                <tr class="clickable" onclick="location.href='{% url 'testing:test_detail' test.pk %}'">
+                    <td class="col-bold">{{ test.pk }}</td>
+                    <td>{{ test.meter.serial_number }}</td>
+                    <td>{{ test.meter.meter_size }}</td>
+                    <td><span class="lab-badge lab-badge--dot lab-badge--{{ test.status }}">{{ test.get_status_display }}</span></td>
+                    <td>
+                        {% if test.overall_pass == True %}<span class="lab-badge lab-badge--pass">PASS</span>
+                        {% elif test.overall_pass == False %}<span class="lab-badge lab-badge--fail">FAIL</span>
+                        {% else %}&mdash;{% endif %}
+                    </td>
+                    <td class="col-muted">{{ test.get_source_display }}</td>
+                    <td class="col-mono col-muted">{{ test.created_at|date:"d M Y H:i" }}</td>
+                    <td><span class="lab-badge lab-badge--{{ test.approval_status }}">{{ test.get_approval_status_display }}</span></td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="lab-text-center lab-text-muted" style="padding:32px;">No tests yet. Start your first test to see results here.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Show Live Monitor link in sidebar if there's an active test -->
+{% if active_test %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var el = document.getElementById('sidebarMonitorLink');
+        if (el) el.style.display = '';
+    });
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,194 @@
+{% extends base_template %}
+
+{% block title %}Live Monitor{% if test %} — Test #{{ test.pk }}{% endif %}{% endblock %}
+{% block nav_monitor %}active{% endblock %}
+{% block page_title %}Live Monitor{% endblock %}
+{% block page_subtitle %}{% if test %}Test #{{ test.pk }} — {{ test.meter.serial_number }} ({{ test.meter.meter_size }}){% else %}No active test{% endif %}{% endblock %}
+{% block page_actions %}
+{% if test %}
+<a href="{% url 'testing:test_detail' test.pk %}" class="btn-lab btn-lab-secondary btn-lab-sm">
+    <i data-lucide="file-text"></i> Test Details
+</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if not test %}
+<div class="lab-card">
+    <div class="lab-empty-state">
+        <i data-lucide="radio"></i>
+        <h3 class="lab-text-bold" style="font-size:18px;margin-bottom:8px;">No Active Test</h3>
+        <p>There's no test currently running on the bench.</p>
+        <a href="{% url 'lab_ui:test_wizard' %}" class="btn-lab btn-lab-primary">
+            <i data-lucide="play-circle"></i> Start New Test
+        </a>
+    </div>
+</div>
+{% else %}
+<div x-data="liveMonitor()">
+
+    <!-- Q-Point Stepper -->
+    <div class="lab-card lab-mb-md">
+        <div class="monitor-qstepper">
+            {% for r in results %}
+            <div class="monitor-qstep">
+                <div>
+                    <div class="monitor-qstep-dot" :class="qStepClass({{ r.q_point }})">
+                        Q{{ r.q_point }}
+                    </div>
+                    <div class="monitor-qstep-flow">{{ r.target_flow_lph }} L/h</div>
+                </div>
+                {% if not forloop.last %}
+                <div class="monitor-qstep-line"></div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Sensor Gauges -->
+    <div class="monitor-gauges"
+         id="monitorData"
+         hx-get="{% url 'lab_ui:monitor_data' test.pk %}"
+         hx-trigger="every 2s"
+         hx-swap="none"
+         hx-on::after-request="if(event.detail.successful) updateMonitor(JSON.parse(event.detail.xhr.responseText))">
+
+        <div class="lab-card monitor-gauge">
+            <div class="monitor-gauge-label">
+                <i data-lucide="droplets"></i> Flow Rate
+            </div>
+            <div class="monitor-gauge-value monitor-gauge-value--flow" id="gaugeFlow">&mdash;</div>
+            <div class="monitor-gauge-unit">L/h</div>
+        </div>
+
+        <div class="lab-card monitor-gauge">
+            <div class="monitor-gauge-label">
+                <i data-lucide="gauge"></i> Pressure
+            </div>
+            <div class="monitor-gauge-value monitor-gauge-value--pressure" id="gaugePressure">&mdash;</div>
+            <div class="monitor-gauge-unit">bar</div>
+        </div>
+
+        <div class="lab-card monitor-gauge">
+            <div class="monitor-gauge-label">
+                <i data-lucide="weight"></i> Weight
+            </div>
+            <div class="monitor-gauge-value monitor-gauge-value--weight" id="gaugeWeight">&mdash;</div>
+            <div class="monitor-gauge-unit">kg</div>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="monitor-metrics">
+        <div class="lab-card monitor-metric">
+            <div class="monitor-metric-label">Temperature</div>
+            <div class="monitor-metric-value" id="metricTemp">&mdash;</div>
+        </div>
+        <div class="lab-card monitor-metric">
+            <div class="monitor-metric-label">VFD Frequency</div>
+            <div class="monitor-metric-value" id="metricVFD">&mdash;</div>
+        </div>
+        <div class="lab-card monitor-metric">
+            <div class="monitor-metric-label">Current Error</div>
+            <div class="monitor-metric-value" id="metricError">&mdash;</div>
+        </div>
+        <div class="lab-card monitor-metric">
+            <div class="monitor-metric-label">State</div>
+            <div class="monitor-metric-value" id="metricState" style="font-size:16px;">{{ test.current_state|default:"Waiting" }}</div>
+        </div>
+    </div>
+
+    <!-- Status Bar + Abort -->
+    <div class="lab-card monitor-status-bar">
+        <div class="lab-flex-gap">
+            <span class="lab-badge lab-badge--dot lab-badge--{{ test.status }}" id="testStatusBadge">{{ test.get_status_display }}</span>
+            <span class="lab-text-muted lab-text-sm" id="testStatusText">
+                {% if test.status == 'running' %}Test in progress...{% elif test.status == 'completed' %}Test complete.{% else %}Waiting...{% endif %}
+            </span>
+        </div>
+        {% if user.role == 'admin' or user.role == 'manager' or user.role == 'lab_tech' %}
+        <div x-data="{ showAbort: false, abortText: '' }">
+            <button x-show="!showAbort" @click="showAbort = true" class="btn-lab btn-lab-danger btn-lab-sm">
+                <i data-lucide="octagon"></i> Abort
+            </button>
+            <div x-show="showAbort" class="lab-flex-gap">
+                <span class="lab-text-muted lab-text-xs">Type ABORT to confirm:</span>
+                <input x-model="abortText" type="text" class="form-control" style="width:100px;padding:6px 10px;font-size:13px;" placeholder="ABORT">
+                <button :disabled="abortText !== 'ABORT'" class="btn-lab btn-lab-danger btn-lab-sm"
+                        :style="abortText !== 'ABORT' ? 'opacity:0.5;cursor:not-allowed' : ''"
+                        @click="if(abortText === 'ABORT') window.location.href='{% url 'testing:test_detail' test.pk %}'">
+                    Confirm
+                </button>
+                <button @click="showAbort = false; abortText = ''" class="btn-lab btn-lab-secondary btn-lab-sm">Cancel</button>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Completion Banner -->
+    <div id="completionBanner" class="lab-card lab-card--accent-success lab-mt-md" style="display:none;">
+        <div class="lab-text-center" style="padding:12px;">
+            <i data-lucide="check-circle" style="width:32px;height:32px;color:#10b981;"></i>
+            <p class="lab-text-bold lab-mb-sm" style="margin-top:8px;">Test completed!</p>
+            <a href="{% url 'testing:test_detail' test.pk %}" class="btn-lab btn-lab-primary">View Results</a>
+        </div>
+    </div>
+</div>
+
+<script>
+    var currentQPoint = {{ test.current_q_point|default:"0" }};
+    var resultData = {};
+
+    function liveMonitor() {
+        return {
+            qStepClass(qp) {
+                var r = resultData[qp];
+                if (r && r.passed === true) return 'qstep--pass';
+                if (r && r.passed === false) return 'qstep--fail';
+                if (qp === currentQPoint) return 'qstep--active';
+                return 'qstep--pending';
+            }
+        };
+    }
+
+    function updateMonitor(data) {
+        currentQPoint = data.current_q_point || 0;
+
+        if (data.sensors) {
+            var s = data.sensors;
+            document.getElementById('gaugeFlow').textContent = s.flow_rate_lph != null ? s.flow_rate_lph.toFixed(1) : '\u2014';
+            document.getElementById('gaugePressure').textContent = s.pressure_bar != null ? s.pressure_bar.toFixed(2) : '\u2014';
+            document.getElementById('gaugeWeight').textContent = s.weight_kg != null ? s.weight_kg.toFixed(3) : '\u2014';
+            document.getElementById('metricTemp').textContent = s.temperature_c != null ? s.temperature_c.toFixed(1) + ' \u00B0C' : '\u2014';
+            document.getElementById('metricVFD').textContent = s.vfd_freq_hz != null ? s.vfd_freq_hz.toFixed(1) + ' Hz' : '\u2014';
+        }
+
+        if (data.results) {
+            data.results.forEach(function(r) {
+                resultData[r.q_point] = r;
+            });
+            var cur = resultData[currentQPoint];
+            if (cur && cur.error_pct != null) {
+                document.getElementById('metricError').textContent = cur.error_pct.toFixed(2) + '%';
+            }
+        }
+
+        document.getElementById('metricState').textContent = data.current_state || 'Waiting';
+
+        if (data.status === 'completed' || data.status === 'failed' || data.status === 'aborted') {
+            document.getElementById('completionBanner').style.display = '';
+            document.getElementById('monitorData').removeAttribute('hx-trigger');
+            htmx.process(document.getElementById('monitorData'));
+        }
+    }
+</script>
+{% endif %}
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var el = document.getElementById('sidebarMonitorLink');
+        if (el) el.style.display = '';
+    });
+</script>
+{% endblock %}

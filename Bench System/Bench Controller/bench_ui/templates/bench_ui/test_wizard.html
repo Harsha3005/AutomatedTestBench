@@ -1,0 +1,252 @@
+{% extends "base_bench.html" %}
+{% load static %}
+
+{% block title %}New Test — Test Wizard{% endblock %}
+{% block tab_test %}active{% endblock %}
+{% block page_title %}Test Wizard{% endblock %}
+
+{% block content %}
+<div x-data="testWizard()" style="height:100%;display:flex;flex-direction:column;gap:8px;">
+
+    <!-- Progress Stepper -->
+    <div style="display:flex;align-items:center;justify-content:center;gap:4px;flex-shrink:0;padding:4px 0;">
+        <template x-for="(s, i) in stepLabels" :key="i">
+            <div style="display:flex;align-items:center;gap:4px;">
+                <div class="wizard-step"
+                     :class="{'wizard-step--active': step === i+1, 'wizard-step--done': step > i+1}"
+                     @click="if (step > i+1) step = i+1">
+                    <span class="wizard-step-num" x-text="step > i+1 ? '\u2713' : i+1"></span>
+                    <span class="wizard-step-label" x-text="s"></span>
+                </div>
+                <span x-show="i < stepLabels.length - 1" style="color:var(--bench-text-dim);font-size:14px;">&#8250;</span>
+            </div>
+        </template>
+    </div>
+
+    <!-- Step Content -->
+    <div class="hmi-card" style="flex:1;padding:12px;display:flex;flex-direction:column;overflow:hidden;">
+
+        <!-- Step 1: Select Meter -->
+        <div x-show="step === 1" x-cloak style="display:flex;flex-direction:column;height:100%;gap:8px;">
+            <div class="hmi-card-title">Select Meter</div>
+            <div style="position:relative;">
+                <input type="text" x-model="meterSearch" placeholder="Search by serial number..."
+                       class="wizard-search"
+                       style="width:100%;padding:8px 12px 8px 32px;background:var(--bench-surface);border:1px solid var(--bench-card-border);border-radius:6px;color:var(--bench-text);font-size:13px;">
+                <i data-lucide="search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--bench-text-dim);"></i>
+            </div>
+            <div style="flex:1;overflow-y:auto;">
+                {% for m in meters %}
+                <div class="wizard-meter-card"
+                     :class="{'wizard-meter-card--selected': selectedMeter && selectedMeter.id === {{ m.pk }}}"
+                     x-show="!meterSearch || '{{ m.serial_number }}'.toLowerCase().includes(meterSearch.toLowerCase()) || '{{ m.meter_size }}'.toLowerCase().includes(meterSearch.toLowerCase())"
+                     @click="selectMeter({{ m.pk }}, '{{ m.serial_number }}', '{{ m.meter_size }}', '{{ m.meter_class }}', '{{ m.get_meter_type_display }}', '{{ m.dut_mode }}')">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <div style="width:36px;height:36px;border-radius:8px;background:var(--bench-accent-dim);display:flex;align-items:center;justify-content:center;">
+                            <i data-lucide="gauge" style="width:18px;height:18px;color:var(--bench-accent);"></i>
+                        </div>
+                        <div style="flex:1;">
+                            <div style="font-weight:600;font-size:13px;">{{ m.serial_number }}</div>
+                            <div style="font-size:11px;color:var(--bench-text-muted);">{{ m.meter_size }} &middot; {{ m.get_meter_class_display }} &middot; {{ m.get_meter_type_display }}</div>
+                        </div>
+                        <div style="text-align:right;font-size:10px;color:var(--bench-text-dim);">
+                            <div>{{ m.test_count }} tests</div>
+                            <div>{{ m.dut_mode }}</div>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <div style="text-align:center;padding:32px;color:var(--bench-text-muted);">
+                    No meters registered.
+                    <a href="{% url 'meters:meter_create' %}" class="text-accent" style="display:block;margin-top:8px;">Register a meter</a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Step 2: DUT Mode -->
+        <div x-show="step === 2" x-cloak style="display:flex;flex-direction:column;height:100%;gap:12px;">
+            <div class="hmi-card-title">DUT Reading Mode</div>
+            <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bench-surface);border-radius:6px;">
+                <i data-lucide="gauge" style="width:16px;height:16px;color:var(--bench-accent);"></i>
+                <span style="font-size:13px;font-weight:600;" x-text="selectedMeter?.serial"></span>
+                <span class="hmi-badge hmi-badge--running" x-text="selectedMeter?.size" style="margin-left:auto;"></span>
+                <span class="hmi-badge" x-text="selectedMeter?.class_name"></span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;flex:1;align-content:center;">
+                <div class="wizard-mode-card"
+                     :class="{'wizard-mode-card--selected': dutMode === 'rs485'}"
+                     @click="dutMode = 'rs485'">
+                    <i data-lucide="cable" style="width:32px;height:32px;color:var(--bench-accent);margin-bottom:8px;"></i>
+                    <div style="font-weight:700;font-size:14px;">RS485 Auto-Read</div>
+                    <div style="font-size:11px;color:var(--bench-text-muted);margin-top:4px;">Automatic Modbus readout from DUT totalizer register. Requires RS485 connection.</div>
+                </div>
+                <div class="wizard-mode-card"
+                     :class="{'wizard-mode-card--selected': dutMode === 'manual'}"
+                     @click="dutMode = 'manual'">
+                    <i data-lucide="keyboard" style="width:32px;height:32px;color:var(--bench-accent);margin-bottom:8px;"></i>
+                    <div style="font-weight:700;font-size:14px;">Manual Entry</div>
+                    <div style="font-size:11px;color:var(--bench-text-muted);margin-top:4px;">Operator enters before/after readings via touchscreen keypad during each Q-point.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Review Q-Points -->
+        <div x-show="step === 3" x-cloak style="display:flex;flex-direction:column;height:100%;gap:8px;">
+            <div class="hmi-card-title">Q-Point Configuration</div>
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bench-surface);border-radius:6px;font-size:12px;">
+                <span x-text="selectedMeter?.serial" style="font-weight:600;"></span>
+                <span style="color:var(--bench-text-dim);" x-text="selectedMeter?.size + ' ' + selectedMeter?.class_name"></span>
+                <span class="hmi-badge hmi-badge--running" x-text="dutMode === 'rs485' ? 'RS485' : 'Manual'" style="margin-left:auto;"></span>
+            </div>
+            <div style="flex:1;overflow-y:auto;">
+                <table class="qpoint-table">
+                    <thead>
+                        <tr>
+                            <th>Q-Point</th>
+                            <th>Flow Rate (L/h)</th>
+                            <th>Volume (L)</th>
+                            <th>Duration (s)</th>
+                            <th>MPE (%)</th>
+                            <th>Zone</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="qp in qPoints" :key="qp.q_point">
+                            <tr>
+                                <td style="font-weight:600;" x-text="qp.q_point"></td>
+                                <td x-text="qp.flow_rate_lph"></td>
+                                <td x-text="qp.test_volume_l"></td>
+                                <td x-text="qp.duration_s"></td>
+                                <td x-text="'\u00b1' + qp.mpe_pct + '%'"></td>
+                                <td>
+                                    <span class="hmi-badge" :class="qp.zone === 'Lower' ? 'hmi-badge--warning' : 'hmi-badge--running'" x-text="qp.zone"></span>
+                                </td>
+                            </tr>
+                        </template>
+                        <template x-if="qPoints.length === 0">
+                            <tr><td colspan="6" style="text-align:center;color:var(--bench-text-muted);padding:16px;">No ISO 4064 standards found for this meter size/class combination.</td></tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Step 4: Confirm & Start -->
+        <div x-show="step === 4" x-cloak style="display:flex;flex-direction:column;height:100%;gap:8px;">
+            <div class="hmi-card-title">Confirm & Start Test</div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
+                <div style="background:var(--bench-surface);border-radius:8px;padding:12px;">
+                    <table class="hmi-table" style="margin:0;">
+                        <tbody>
+                            <tr>
+                                <td style="color:var(--bench-text-muted);width:120px;">Meter</td>
+                                <td style="font-weight:600;" x-text="selectedMeter?.serial"></td>
+                            </tr>
+                            <tr>
+                                <td style="color:var(--bench-text-muted);">Size / Class</td>
+                                <td x-text="selectedMeter?.size + ' / ' + selectedMeter?.class_name"></td>
+                            </tr>
+                            <tr>
+                                <td style="color:var(--bench-text-muted);">Type</td>
+                                <td x-text="selectedMeter?.type"></td>
+                            </tr>
+                            <tr>
+                                <td style="color:var(--bench-text-muted);">DUT Mode</td>
+                                <td>
+                                    <span class="hmi-badge hmi-badge--running" x-text="dutMode === 'rs485' ? 'RS485 Auto-Read' : 'Manual Entry'"></span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="color:var(--bench-text-muted);">Q-Points</td>
+                                <td x-text="qPoints.length + ' points (Q1-Q' + qPoints.length + ')'"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div>
+                    <label style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:600;">Notes (optional)</label>
+                    <textarea x-model="notes" rows="2" placeholder="Add notes..."
+                              style="width:100%;margin-top:4px;padding:8px;background:var(--bench-surface);border:1px solid var(--bench-card-border);border-radius:6px;color:var(--bench-text);font-size:12px;resize:none;"></textarea>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Navigation Buttons -->
+    <div style="display:flex;gap:8px;flex-shrink:0;">
+        <a href="{% url 'bench_ui:dashboard' %}" class="btn-hmi btn-hmi-ghost" style="min-height:40px;">
+            <i data-lucide="arrow-left" class="icon-sm"></i> Cancel
+        </a>
+        <button class="btn-hmi btn-hmi-ghost" @click="step--" x-show="step > 1" style="min-height:40px;">
+            <i data-lucide="chevron-left" class="icon-sm"></i> Back
+        </button>
+        <div style="flex:1;"></div>
+        <button class="btn-hmi btn-hmi-primary" @click="step++" x-show="step < 4"
+                :disabled="(step === 1 && !selectedMeter)" style="min-height:40px;min-width:120px;">
+            Next <i data-lucide="chevron-right" class="icon-sm"></i>
+        </button>
+        <button class="btn-hmi btn-hmi-success" x-show="step === 4" @click="submitWizard()"
+                :disabled="submitting" style="min-height:44px;min-width:160px;font-size:15px;font-weight:700;">
+            <template x-if="!submitting">
+                <span><i data-lucide="play" class="icon-sm"></i> START TEST</span>
+            </template>
+            <template x-if="submitting">
+                <span>Starting...</span>
+            </template>
+        </button>
+    </div>
+
+    <!-- Hidden Form -->
+    <form id="wizard-form" method="post" action="{% url 'bench_ui:test_wizard' %}" style="display:none;">
+        {% csrf_token %}
+        <input type="hidden" name="meter_id" x-model="selectedMeter?.id">
+        <input type="hidden" name="dut_mode" x-model="dutMode">
+        <input type="hidden" name="notes" x-model="notes">
+    </form>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const ISO_STANDARDS = {{ standards_json|safe }};
+
+function testWizard() {
+    return {
+        step: 1,
+        stepLabels: ['Select Meter', 'DUT Mode', 'Q-Points', 'Confirm'],
+        selectedMeter: null,
+        meterSearch: '',
+        dutMode: 'manual',
+        notes: '',
+        qPoints: [],
+        submitting: false,
+
+        selectMeter(id, serial, size, className, type, dutMode) {
+            this.selectedMeter = { id, serial, size, class_name: className, type, dut_mode: dutMode };
+            this.dutMode = dutMode;
+            this.loadQPoints();
+        },
+
+        loadQPoints() {
+            if (!this.selectedMeter) { this.qPoints = []; return; }
+            const key = this.selectedMeter.size + '_' + this.selectedMeter.class_name;
+            this.qPoints = ISO_STANDARDS[key] || [];
+        },
+
+        submitWizard() {
+            if (!this.selectedMeter || this.submitting) return;
+            this.submitting = true;
+
+            const form = document.getElementById('wizard-form');
+            form.querySelector('[name="meter_id"]').value = this.selectedMeter.id;
+            form.querySelector('[name="dut_mode"]').value = this.dutMode;
+            form.querySelector('[name="notes"]').value = this.notes;
+            form.submit();
+        },
+    };
+}
+</script>
+{% endblock %}

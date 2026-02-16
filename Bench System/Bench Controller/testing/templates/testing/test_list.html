@@ -1,0 +1,341 @@
+{% extends base_template %}
+
+{% block title %}Test History{% endblock %}
+{% block tab_history %}active{% endblock %}
+{% block nav_tests %}active{% endblock %}
+{% block page_title %}Test History{% endblock %}
+{% block page_actions %}
+{% if is_lab %}
+<a href="{% url 'lab_ui:test_export_csv' %}{% if filters.q %}?q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.result %}&result={{ filters.result }}{% endif %}"
+   class="btn-lab btn-lab-secondary btn-lab-sm">
+    <i data-lucide="download"></i> Export CSV
+</a>
+{% endif %}
+<a href="{% if is_lab %}{% url 'lab_ui:test_wizard' %}{% else %}{% url 'testing:test_create' %}{% endif %}" class="{% if is_bench %}btn-hmi btn-hmi-primary btn-hmi-sm{% else %}btn-lab btn-lab-primary{% endif %}">
+    <i data-lucide="play-circle"></i> New Test
+</a>
+{% endblock %}
+
+{% block content %}
+{% if is_bench %}
+{# ── BENCH HMI: Search bar + filter drawer ── #}
+<div x-data="{ drawerOpen: false }" style="height:100%;display:flex;flex-direction:column;gap:4px;">
+
+    <!-- Top bar: search + filter toggle -->
+    <div style="display:flex;gap:4px;flex-shrink:0;align-items:stretch;">
+        <form method="get" action="{% url 'testing:test_list' %}" style="flex:1;display:flex;gap:4px;">
+            {# Carry existing filters through search #}
+            {% if filters.status %}<input type="hidden" name="status" value="{{ filters.status }}">{% endif %}
+            {% if filters.result %}<input type="hidden" name="result" value="{{ filters.result }}">{% endif %}
+            {% if filters.approval %}<input type="hidden" name="approval" value="{{ filters.approval }}">{% endif %}
+            {% if filters.source %}<input type="hidden" name="source" value="{{ filters.source }}">{% endif %}
+            {% if filters.meter %}<input type="hidden" name="meter" value="{{ filters.meter }}">{% endif %}
+            {% if filters.user %}<input type="hidden" name="user" value="{{ filters.user }}">{% endif %}
+            {% if filters.date_from %}<input type="hidden" name="date_from" value="{{ filters.date_from }}">{% endif %}
+            {% if filters.date_to %}<input type="hidden" name="date_to" value="{{ filters.date_to }}">{% endif %}
+            <div style="flex:1;position:relative;">
+                <i data-lucide="search" style="width:14px;height:14px;position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--bench-text-dim);pointer-events:none;"></i>
+                <input type="text" name="q" value="{{ filters.q|default:'' }}" placeholder="Search meter, test #, notes..."
+                       class="hmi-input" style="padding:5px 8px 5px 28px;font-size:12px;width:100%;">
+            </div>
+            <button type="submit" class="btn-hmi btn-hmi-primary btn-hmi-sm"
+                    style="min-height:0;padding:4px 12px;font-size:11px;">
+                Search
+            </button>
+        </form>
+
+        <button @click="drawerOpen = !drawerOpen" class="btn-hmi btn-hmi-sm"
+                :class="drawerOpen ? 'btn-hmi-primary' : 'btn-hmi-ghost'"
+                style="min-height:0;padding:4px 10px;font-size:11px;position:relative;">
+            <i data-lucide="sliders-horizontal" style="width:14px;height:14px;"></i>
+            Filters
+            {% if filter_count %}
+            <span style="position:absolute;top:-4px;right:-4px;background:var(--bench-danger);color:#fff;
+                         font-size:9px;font-weight:700;min-width:16px;height:16px;border-radius:8px;
+                         display:flex;align-items:center;justify-content:center;">{{ filter_count }}</span>
+            {% endif %}
+        </button>
+
+        {% if filter_count %}
+        <a href="{% url 'testing:test_list' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm"
+           style="min-height:0;padding:4px 10px;font-size:11px;color:var(--bench-danger);">
+            <i data-lucide="x" style="width:12px;height:12px;"></i> Clear
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Main area: table + optional drawer -->
+    <div style="flex:1;display:flex;gap:4px;overflow:hidden;">
+
+        <!-- Test table -->
+        <div class="hmi-card" style="flex:1;display:flex;flex-direction:column;padding:6px 8px;overflow:hidden;">
+            <div style="overflow-y:auto;flex:1;">
+                <table class="hmi-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Meter</th>
+                            <th>Status</th>
+                            <th>Result</th>
+                            <th>Source</th>
+                            <th>Initiated By</th>
+                            <th>Created</th>
+                            <th>Approval</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for test in tests %}
+                        <tr onclick="location.href='{% url 'testing:test_detail' test.pk %}'" style="cursor:pointer;">
+                            <td style="font-weight:500;">{{ test.pk }}</td>
+                            <td>{{ test.meter.serial_number }} ({{ test.meter.meter_size }})</td>
+                            <td>
+                                <span class="hmi-badge hmi-badge--{{ test.status }}">
+                                    {{ test.get_status_display }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if test.overall_pass == True %}
+                                <span class="hmi-badge hmi-badge--pass">PASS</span>
+                                {% elif test.overall_pass == False %}
+                                <span class="hmi-badge hmi-badge--fail">FAIL</span>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td>{{ test.get_source_display }}</td>
+                            <td>{% if test.initiated_by %}{{ test.initiated_by.full_name|default:test.initiated_by.username }}{% else %}—{% endif %}</td>
+                            <td class="mono" style="font-size:11px;">{{ test.created_at|date:"d M Y H:i" }}</td>
+                            <td>
+                                <span class="hmi-badge hmi-badge--{{ test.approval_status }}">
+                                    {{ test.get_approval_status_display }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--bench-text-muted);">No tests found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Filter drawer (slides from right) -->
+        <div x-show="drawerOpen" x-cloak
+             x-transition:enter="filter-drawer-enter"
+             x-transition:enter-start="filter-drawer-enter-start"
+             x-transition:enter-end="filter-drawer-enter-end"
+             x-transition:leave="filter-drawer-leave"
+             x-transition:leave-start="filter-drawer-leave-start"
+             x-transition:leave-end="filter-drawer-leave-end"
+             class="filter-drawer">
+
+            <form method="get" action="{% url 'testing:test_list' %}" style="height:100%;display:flex;flex-direction:column;">
+                {# Carry search through filters #}
+                {% if filters.q %}<input type="hidden" name="q" value="{{ filters.q }}">{% endif %}
+
+                <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:700;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+                    Filters
+                    <button type="button" @click="drawerOpen = false" class="btn-hmi btn-hmi-ghost"
+                            style="min-height:0;padding:2px 4px;border:none;">
+                        <i data-lucide="x" style="width:12px;height:12px;"></i>
+                    </button>
+                </div>
+
+                <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
+
+                    <!-- Status -->
+                    <div>
+                        <div class="filter-drawer-label">Status</div>
+                        <select name="status" class="hmi-select" style="padding:4px 6px;font-size:11px;">
+                            <option value="">All</option>
+                            {% for value, label in status_choices %}
+                            <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Result -->
+                    <div>
+                        <div class="filter-drawer-label">Result</div>
+                        <select name="result" class="hmi-select" style="padding:4px 6px;font-size:11px;">
+                            <option value="">All</option>
+                            <option value="pass" {% if filters.result == 'pass' %}selected{% endif %}>Pass</option>
+                            <option value="fail" {% if filters.result == 'fail' %}selected{% endif %}>Fail</option>
+                        </select>
+                    </div>
+
+                    <!-- Approval -->
+                    <div>
+                        <div class="filter-drawer-label">Approval</div>
+                        <select name="approval" class="hmi-select" style="padding:4px 6px;font-size:11px;">
+                            <option value="">All</option>
+                            {% for value, label in approval_choices %}
+                            <option value="{{ value }}" {% if filters.approval == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Source -->
+                    <div>
+                        <div class="filter-drawer-label">Source</div>
+                        <select name="source" class="hmi-select" style="padding:4px 6px;font-size:11px;">
+                            <option value="">All</option>
+                            {% for value, label in source_choices %}
+                            <option value="{{ value }}" {% if filters.source == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Meter -->
+                    <div>
+                        <div class="filter-drawer-label">Meter</div>
+                        <select name="meter" class="hmi-select" style="padding:4px 6px;font-size:11px;">
+                            <option value="">All</option>
+                            {% for m in all_meters %}
+                            <option value="{{ m.pk }}" {% if filters.meter == m.pk|stringformat:"d" %}selected{% endif %}>{{ m.serial_number }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Initiated By -->
+                    <div>
+                        <div class="filter-drawer-label">Initiated By</div>
+                        <select name="user" class="hmi-select" style="padding:4px 6px;font-size:11px;">
+                            <option value="">All</option>
+                            {% for u in all_users %}
+                            <option value="{{ u.pk }}" {% if filters.user == u.pk|stringformat:"d" %}selected{% endif %}>{{ u.full_name|default:u.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Date Range -->
+                    <div>
+                        <div class="filter-drawer-label">Date From</div>
+                        <input type="date" name="date_from" value="{{ filters.date_from|default:'' }}"
+                               class="hmi-input" style="padding:4px 6px;font-size:11px;">
+                    </div>
+                    <div>
+                        <div class="filter-drawer-label">Date To</div>
+                        <input type="date" name="date_to" value="{{ filters.date_to|default:'' }}"
+                               class="hmi-input" style="padding:4px 6px;font-size:11px;">
+                    </div>
+
+                </div>
+
+                <!-- Apply / Clear -->
+                <div style="display:flex;gap:4px;margin-top:6px;flex-shrink:0;">
+                    <button type="submit" class="btn-hmi btn-hmi-primary btn-hmi-sm"
+                            style="flex:1;min-height:28px;padding:4px 8px;font-size:11px;">
+                        <i data-lucide="check" style="width:12px;height:12px;"></i> Apply
+                    </button>
+                    <a href="{% url 'testing:test_list' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm"
+                       style="flex:1;min-height:28px;padding:4px 8px;font-size:11px;text-align:center;">
+                        Clear All
+                    </a>
+                </div>
+            </form>
+        </div>
+
+    </div>
+</div>
+
+{% else %}
+{# ── LAB: clean layout with filter tabs ── #}
+<div>
+    <!-- Search -->
+    <div class="lab-mb-md">
+        <form method="get" action="{% url 'testing:test_list' %}" class="lab-search-bar">
+            {% if filters.status %}<input type="hidden" name="status" value="{{ filters.status }}">{% endif %}
+            <input type="text" name="q" value="{{ filters.q|default:'' }}" placeholder="Search meter, test #, notes..."
+                   class="form-control">
+            <button type="submit" class="btn btn-outline-primary">Search</button>
+            {% if filter_count %}
+            <a href="{% url 'testing:test_list' %}" class="btn btn-outline-secondary">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+
+    <!-- Status filter tabs -->
+    <div class="lab-filter-tabs">
+        <a href="{% url 'testing:test_list' %}{% if filters.q %}?q={{ filters.q }}{% endif %}" class="lab-filter-tab {% if not current_filter %}active{% endif %}">All</a>
+        {% for value, label in status_choices %}
+        <a href="{% url 'testing:test_list' %}?status={{ value }}{% if filters.q %}&q={{ filters.q }}{% endif %}" class="lab-filter-tab {% if current_filter == value %}active{% endif %}">{{ label }}</a>
+        {% endfor %}
+    </div>
+
+    <div class="lab-card">
+        <div class="lab-overflow-x">
+            <table class="lab-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Meter</th>
+                        <th>Status</th>
+                        <th>Result</th>
+                        <th>Source</th>
+                        <th>Initiated By</th>
+                        <th>Created</th>
+                        <th>Approval</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for test in tests %}
+                    <tr class="clickable" onclick="location.href='{% url 'testing:test_detail' test.pk %}'">
+                        <td class="col-bold">{{ test.pk }}</td>
+                        <td>{{ test.meter.serial_number }} ({{ test.meter.meter_size }})</td>
+                        <td>
+                            <span class="lab-badge lab-badge--dot lab-badge--{{ test.status }}">
+                                {{ test.get_status_display }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if test.overall_pass == True %}
+                            <span class="lab-badge lab-badge--pass">PASS</span>
+                            {% elif test.overall_pass == False %}
+                            <span class="lab-badge lab-badge--fail">FAIL</span>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td class="col-muted">{{ test.get_source_display }}</td>
+                        <td>{% if test.initiated_by %}{{ test.initiated_by.full_name|default:test.initiated_by.username }}{% else %}—{% endif %}</td>
+                        <td class="col-mono col-muted">{{ test.created_at|date:"d M Y H:i" }}</td>
+                        <td>
+                            <span class="lab-badge lab-badge--{{ test.approval_status }}">
+                                {{ test.get_approval_status_display }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8">
+                            <div class="lab-empty-state">
+                                <i data-lucide="clipboard-list"></i>
+                                <p>No tests found.</p>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj and page_obj.has_other_pages %}
+        <div class="lab-pagination">
+            <span class="lab-pagination-info">
+                Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                ({{ page_obj.paginator.count }} tests)
+            </span>
+            <div class="lab-pagination-buttons">
+                {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.result %}&result={{ filters.result }}{% endif %}{% if filters.approval %}&approval={{ filters.approval }}{% endif %}{% if filters.source %}&source={{ filters.source }}{% endif %}"
+                   class="btn-lab btn-lab-secondary btn-lab-sm">Previous</a>
+                {% endif %}
+                {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.result %}&result={{ filters.result }}{% endif %}{% if filters.approval %}&approval={{ filters.approval }}{% endif %}{% if filters.source %}&source={{ filters.source }}{% endif %}"
+                   class="btn-lab btn-lab-primary btn-lab-sm">Next</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

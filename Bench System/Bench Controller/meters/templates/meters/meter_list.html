@@ -1,0 +1,47 @@
+{% extends base_template %}
+
+{% block title %}Meters{% endblock %}
+{% block tab_meters %}active{% endblock %}
+{% block nav_meters %}active{% endblock %}
+{% block page_title %}Registered Meters{% endblock %}
+{% block page_actions %}
+<a href="{% url 'meters:meter_create' %}" class="{% if is_bench %}btn-hmi btn-hmi-primary btn-hmi-sm{% else %}btn btn-primary{% endif %}">
+    <i data-lucide="plus-circle" style="width:16px;height:16px;"></i> Register Meter
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="{% if is_bench %}hmi-card{% else %}lab-card{% endif %}">
+    <div style="overflow-x:auto;">
+        <table class="{% if is_bench %}hmi-table{% else %}lab-table{% endif %}">
+            <thead>
+                <tr>
+                    <th>Serial Number</th>
+                    <th>Size</th>
+                    <th>Class</th>
+                    <th>Type</th>
+                    <th>DUT Mode</th>
+                    <th>Tests</th>
+                    <th>Last Tested</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for meter in meters %}
+                <tr class="{% if not is_bench %}clickable{% endif %}"
+                    onclick="location.href='{% url 'meters:meter_detail' meter.pk %}'">
+                    <td style="font-weight:500;">{{ meter.serial_number }}</td>
+                    <td>{{ meter.meter_size }}</td>
+                    <td>{{ meter.meter_class }}</td>
+                    <td>{{ meter.get_meter_type_display }}</td>
+                    <td>{{ meter.get_dut_mode_display }}</td>
+                    <td>{{ meter.test_count }}</td>
+                    <td>{{ meter.last_tested|date:"d M Y H:i"|default:"Never" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" style="text-align:center;padding:24px;{% if is_bench %}color:var(--bench-text-muted){% else %}color:var(--color-text-muted){% endif %}">No meters registered.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

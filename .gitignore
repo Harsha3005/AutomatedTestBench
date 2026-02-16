@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+
+# Django
+*.sqlite3
+*.sqlite3-journal
+media/
+staticfiles/
+*.log
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Byte-compiled
+*.o
+*.a
+*.d
+*.bin
+*.elf
+*.hex
+*.map

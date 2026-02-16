@@ -1,0 +1,23 @@
+[Unit]
+Description=IIITB Water Meter Test Bench - Django/Daphne ASGI Server
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=harshavardhan
+Group=harshavardhan
+WorkingDirectory=/home/harshavardhan/I.R.A.S/Water Flow Meter Calibration System/Bench System/Bench Controller
+Environment=DJANGO_SETTINGS_MODULE=config.settings_bench
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/harshavardhan/I.R.A.S/Water Flow Meter Calibration System/Bench System/Bench Controller/venv/bin/daphne \
+    -b 127.0.0.1 \
+    -p 8000 \
+    config.asgi:application
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,181 @@
+{% extends "base_bench.html" %}
+{% load static %}
+
+{% block title %}Live Test #{{ test.pk }}{% endblock %}
+{% block tab_test %}active{% endblock %}
+
+{% block content %}
+<div x-data="testControl({{ test.pk }})" x-init="startPolling()" style="display:grid;grid-template-columns:200px 1fr 240px;gap:8px;height:100%;">
+
+    <!-- LEFT: Gauges -->
+    <div class="hmi-card" style="display:flex;flex-direction:column;align-items:center;justify-content:space-around;padding:8px;">
+        <!-- Flow Rate Gauge -->
+        <div class="hmi-gauge" style="width:100%;">
+            <svg viewBox="0 0 120 120" width="100" height="100">
+                <circle class="gauge-ring gauge-ring-bg" cx="60" cy="60" r="52"
+                        stroke-dasharray="245" stroke-dashoffset="0" transform="rotate(-135 60 60)"></circle>
+                <circle class="gauge-ring gauge-ring-fill" cx="60" cy="60" r="52"
+                        stroke-dasharray="245" :stroke-dashoffset="gaugeArc(flowRate, 2500)"
+                        transform="rotate(-135 60 60)"></circle>
+            </svg>
+            <span class="hmi-gauge-value" x-text="flowRate.toFixed(1)">0.0</span>
+            <span class="hmi-gauge-unit">L/h</span>
+            <span class="hmi-gauge-label">Flow Rate</span>
+        </div>
+        <!-- Pressure Gauge -->
+        <div class="hmi-gauge" style="width:100%;">
+            <svg viewBox="0 0 120 120" width="80" height="80">
+                <circle class="gauge-ring gauge-ring-bg" cx="60" cy="60" r="52"
+                        stroke-dasharray="245" stroke-dashoffset="0" transform="rotate(-135 60 60)"></circle>
+                <circle class="gauge-ring" :class="pressure > 6 ? 'gauge-ring-fill--danger' : 'gauge-ring-fill'" cx="60" cy="60" r="52"
+                        stroke-dasharray="245" :stroke-dashoffset="gaugeArc(pressure, 10)"
+                        transform="rotate(-135 60 60)"></circle>
+            </svg>
+            <span class="hmi-gauge-value" style="font-size:18px;" x-text="pressure.toFixed(2)">0.00</span>
+            <span class="hmi-gauge-unit">bar</span>
+            <span class="hmi-gauge-label">Pressure</span>
+        </div>
+        <!-- Temperature -->
+        <div style="text-align:center;padding:6px;">
+            <div class="mono text-accent" style="font-size:20px;" x-text="temperature.toFixed(1) + '°C'">0.0°C</div>
+            <div class="hmi-gauge-label">Temperature</div>
+        </div>
+        <!-- Weight -->
+        <div style="text-align:center;padding:6px;">
+            <div class="mono text-accent" style="font-size:20px;" x-text="weight.toFixed(2) + ' kg'">0.00 kg</div>
+            <div class="hmi-gauge-label">Weight</div>
+        </div>
+        <!-- VFD Frequency -->
+        <div style="text-align:center;padding:6px;">
+            <div class="mono" style="font-size:16px;color:var(--bench-text-muted);" x-text="vfdFreq.toFixed(1) + ' Hz'">0.0 Hz</div>
+            <div class="hmi-gauge-label">VFD</div>
+        </div>
+    </div>
+
+    <!-- CENTER: State Machine + Q-Point Table -->
+    <div class="hmi-card" style="display:flex;flex-direction:column;overflow:hidden;">
+        <!-- State Machine Bar -->
+        <div class="hmi-card-title">State Machine</div>
+        <div class="state-machine" style="margin-bottom:8px;">
+            <template x-for="state in states" :key="state">
+                <div style="display:flex;align-items:center;gap:2px;">
+                    <span class="state-node"
+                          :class="{'state-node--active': currentState === state, 'state-node--done': completedStates.includes(state)}"
+                          x-text="state"></span>
+                    <span class="state-arrow" x-show="state !== states[states.length - 1]">&#8250;</span>
+                </div>
+            </template>
+        </div>
+
+        <!-- Q-Point Results -->
+        <div class="hmi-card-title" style="margin-top:4px;">
+            Q-Point Progress — <span class="text-accent" x-text="currentQPoint || '—'"></span>
+        </div>
+        <div style="flex:1;overflow-y:auto;">
+            <table class="qpoint-table">
+                <thead>
+                    <tr><th>Q</th><th>Target</th><th>Ref Vol</th><th>DUT Vol</th><th>Error%</th><th>MPE%</th><th>Result</th></tr>
+                </thead>
+                <tbody>
+                    {% for r in results %}
+                    <tr :class="{
+                        'qpoint-row--active': currentQPoint === '{{ r.q_point }}',
+                        'qpoint-row--pass': qResults['{{ r.q_point }}']?.passed === true,
+                        'qpoint-row--fail': qResults['{{ r.q_point }}']?.passed === false,
+                        'qpoint-row--pending': !qResults['{{ r.q_point }}']?.passed && currentQPoint !== '{{ r.q_point }}'
+                    }">
+                        <td style="font-weight:600;">{{ r.q_point }}</td>
+                        <td>{{ r.target_flow_lph }}</td>
+                        <td x-text="qResults['{{ r.q_point }}']?.ref_volume ?? '—'">{{ r.ref_volume_l|default:"—" }}</td>
+                        <td x-text="qResults['{{ r.q_point }}']?.dut_volume ?? '—'">{{ r.dut_volume_l|default:"—" }}</td>
+                        <td x-text="qResults['{{ r.q_point }}']?.error_pct != null ? qResults['{{ r.q_point }}'].error_pct + '%' : '—'">—</td>
+                        <td>&plusmn;{{ r.mpe_pct }}%</td>
+                        <td>
+                            <template x-if="qResults['{{ r.q_point }}']?.passed === true">
+                                <span class="hmi-badge hmi-badge--pass">PASS</span>
+                            </template>
+                            <template x-if="qResults['{{ r.q_point }}']?.passed === false">
+                                <span class="hmi-badge hmi-badge--fail">FAIL</span>
+                            </template>
+                            <template x-if="qResults['{{ r.q_point }}']?.passed == null">
+                                <span class="hmi-badge hmi-badge--pending">—</span>
+                            </template>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- RIGHT: Controls -->
+    <div style="display:flex;flex-direction:column;gap:8px;">
+        <!-- E-Stop -->
+        <div class="hmi-card" style="display:flex;align-items:center;justify-content:center;flex:0 0 auto;padding:16px;">
+            <button class="btn-estop" @click="estop()">
+                E-STOP
+            </button>
+        </div>
+
+        <!-- Test Info -->
+        <div class="hmi-card" style="flex:1;">
+            <div class="hmi-card-title">Test #{{ test.pk }}</div>
+            <table class="hmi-table" style="margin:0;">
+                <tbody>
+                    <tr><td style="color:var(--bench-text-muted);font-size:10px;">Meter</td><td style="font-size:12px;">{{ test.meter.serial_number }}</td></tr>
+                    <tr><td style="color:var(--bench-text-muted);font-size:10px;">Size</td><td style="font-size:12px;">{{ test.meter.meter_size }} {{ test.meter.meter_class }}</td></tr>
+                    <tr>
+                        <td style="color:var(--bench-text-muted);font-size:10px;">Status</td>
+                        <td><span class="hmi-badge" :class="'hmi-badge--' + testStatus" x-text="testStatus">{{ test.status }}</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="hmi-card" style="flex:0 0 auto;">
+            <div style="display:flex;flex-direction:column;gap:6px;">
+                <button class="btn-hmi btn-hmi-success" @click="startTest()" x-show="testStatus === 'pending' || testStatus === 'acknowledged'" style="width:100%;">
+                    <i data-lucide="play" class="icon-sm"></i> Start
+                </button>
+                <button class="btn-hmi btn-hmi-warning" @click="abortTest()" x-show="testStatus === 'running'" style="width:100%;">
+                    <i data-lucide="square" class="icon-sm"></i> Abort
+                </button>
+                <a href="{% url 'bench_ui:test_control' %}" class="btn-hmi btn-hmi-ghost" style="width:100%;">
+                    <i data-lucide="arrow-left" class="icon-sm"></i> Back
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- DUT Manual Entry Overlay (T-605) -->
+    <div x-show="dutPrompt.pending" x-cloak class="dut-overlay">
+        <div class="dut-modal">
+            <div class="dut-header">
+                <span style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:700;">Enter DUT Reading</span>
+                <div style="margin-top:4px;display:flex;gap:8px;align-items:center;">
+                    <span class="hmi-badge hmi-badge--running" x-text="dutPrompt.reading_type === 'before' ? 'BEFORE' : 'AFTER'"></span>
+                    <span class="text-accent mono" style="font-size:18px;font-weight:700;" x-text="dutPrompt.q_point"></span>
+                </div>
+            </div>
+            <div class="dut-display" x-text="dutValue || '0'"></div>
+            <div class="dut-unit">Litres (L)</div>
+            <div class="dut-keypad">
+                <template x-for="key in ['7','8','9','4','5','6','1','2','3','.','0','⌫']" :key="key">
+                    <button class="dut-key" @click="dutKeyPress(key)" x-text="key"></button>
+                </template>
+            </div>
+            <button class="btn-hmi btn-hmi-success dut-submit" @click="dutSubmit()"
+                    :disabled="!dutValue || dutValue === '.'">
+                <i data-lucide="check" class="icon-sm"></i> Submit Reading
+            </button>
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/bench_gauges.js' %}"></script>
+{% endblock %}

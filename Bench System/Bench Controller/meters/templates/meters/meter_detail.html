@@ -1,0 +1,87 @@
+{% extends base_template %}
+
+{% block title %}Meter {{ meter.serial_number }}{% endblock %}
+{% block tab_meters %}active{% endblock %}
+{% block nav_meters %}active{% endblock %}
+{% block page_title %}{{ meter.serial_number }}{% endblock %}
+{% block page_actions %}
+<a href="{% url 'meters:meter_edit' meter.pk %}" class="{% if is_bench %}btn-hmi btn-hmi-ghost btn-hmi-sm{% else %}btn btn-outline-primary btn-sm{% endif %}">Edit</a>
+<a href="{% url 'testing:test_create' %}?meter={{ meter.pk }}" class="{% if is_bench %}btn-hmi btn-hmi-primary btn-hmi-sm{% else %}btn btn-primary btn-sm{% endif %}">New Test</a>
+{% endblock %}
+
+{% block content %}
+{% if is_bench %}
+<!-- BENCH: Compact layout -->
+<div class="bench-grid" style="grid-template-columns: 1fr 1fr; height:100%;">
+    <div class="hmi-card">
+        <div class="hmi-card-title">Meter Details</div>
+        <table class="hmi-table" style="margin:0;">
+            <tbody>
+                <tr><td style="color:var(--bench-text-muted);">Serial</td><td>{{ meter.serial_number }}</td></tr>
+                <tr><td style="color:var(--bench-text-muted);">Size</td><td>{{ meter.meter_size }}</td></tr>
+                <tr><td style="color:var(--bench-text-muted);">Class</td><td>{{ meter.meter_class }}</td></tr>
+                <tr><td style="color:var(--bench-text-muted);">Type</td><td>{{ meter.get_meter_type_display }}</td></tr>
+                <tr><td style="color:var(--bench-text-muted);">Manufacturer</td><td>{{ meter.manufacturer|default:"—" }}</td></tr>
+                <tr><td style="color:var(--bench-text-muted);">DUT Mode</td><td>{{ meter.get_dut_mode_display }}</td></tr>
+                {% if meter.dut_mode == 'rs485' %}
+                <tr><td style="color:var(--bench-text-muted);">Modbus Addr</td><td>{{ meter.modbus_address }}</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+    <div class="hmi-card">
+        <div class="hmi-card-title">Recent Tests</div>
+        {% for test in tests %}
+        <a href="{% url 'testing:test_detail' test.pk %}" style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:6px;text-decoration:none;color:var(--bench-text);margin-bottom:4px;background:var(--bench-surface);">
+            <span>Test #{{ test.pk }}</span>
+            <span>
+                <span class="hmi-badge hmi-badge--{{ test.status }}">{{ test.get_status_display }}</span>
+                {% if test.overall_pass == True %}<span class="hmi-badge hmi-badge--pass" style="margin-left:4px;">PASS</span>
+                {% elif test.overall_pass == False %}<span class="hmi-badge hmi-badge--fail" style="margin-left:4px;">FAIL</span>{% endif %}
+            </span>
+        </a>
+        {% empty %}
+        <p class="text-hmi-muted" style="padding:16px;text-align:center;">No tests yet.</p>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<!-- LAB: Two-column card layout -->
+<div style="display:grid;grid-template-columns:5fr 7fr;gap:20px;">
+    <div class="lab-card">
+        <div class="lab-card-header"><span class="lab-card-title">Meter Details</span></div>
+        <table class="lab-table" style="margin:0;">
+            <tbody>
+                <tr><td style="color:var(--color-text-muted);width:40%;">Serial</td><td>{{ meter.serial_number }}</td></tr>
+                <tr><td style="color:var(--color-text-muted);">Size</td><td>{{ meter.meter_size }}</td></tr>
+                <tr><td style="color:var(--color-text-muted);">Class</td><td>{{ meter.meter_class }}</td></tr>
+                <tr><td style="color:var(--color-text-muted);">Type</td><td>{{ meter.get_meter_type_display }}</td></tr>
+                <tr><td style="color:var(--color-text-muted);">Manufacturer</td><td>{{ meter.manufacturer|default:"—" }}</td></tr>
+                <tr><td style="color:var(--color-text-muted);">Model</td><td>{{ meter.model_name|default:"—" }}</td></tr>
+                <tr><td style="color:var(--color-text-muted);">DUT Mode</td><td>{{ meter.get_dut_mode_display }}</td></tr>
+                {% if meter.dut_mode == 'rs485' %}
+                <tr><td style="color:var(--color-text-muted);">Modbus Addr</td><td>{{ meter.modbus_address }}</td></tr>
+                {% endif %}
+                <tr><td style="color:var(--color-text-muted);">Registered</td><td>{{ meter.created_at|date:"d M Y" }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="lab-card">
+        <div class="lab-card-header"><span class="lab-card-title">Recent Tests</span></div>
+        {% for test in tests %}
+        <a href="{% url 'testing:test_detail' test.pk %}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:8px;text-decoration:none;color:var(--color-text);margin-bottom:4px;transition:background 0.1s;">
+            <span>Test #{{ test.pk }} — {{ test.get_status_display }}</span>
+            <span>
+                {% if test.overall_pass == True %}<span class="lab-badge lab-badge--pass">PASS</span>
+                {% elif test.overall_pass == False %}<span class="lab-badge lab-badge--fail">FAIL</span>
+                {% else %}<span class="lab-badge lab-badge--aborted">—</span>{% endif %}
+                <small style="color:var(--color-text-muted);margin-left:8px;">{{ test.created_at|date:"d M Y" }}</small>
+            </span>
+        </a>
+        {% empty %}
+        <p style="color:var(--color-text-muted);text-align:center;padding:24px;">No tests yet.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

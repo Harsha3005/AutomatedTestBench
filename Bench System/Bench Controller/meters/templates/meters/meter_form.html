@@ -1,0 +1,199 @@
+{% extends base_template %}
+
+{% block title %}{% if meter %}Edit Meter{% else %}Register Meter{% endif %}{% endblock %}
+{% block tab_meters %}active{% endblock %}
+{% block nav_meters %}active{% endblock %}
+{% block page_title %}{% if meter %}Edit: {{ meter.serial_number }}{% else %}Register New Meter{% endif %}{% endblock %}
+
+{% block content %}
+{% if is_bench %}
+{# ── Bench: centered compact form ── #}
+<div style="display:flex;justify-content:center;align-items:flex-start;height:100%;">
+    <div class="hmi-card" style="width:520px;padding:12px 16px;">
+
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:700;margin-bottom:10px;">
+            <i data-lucide="gauge" style="width:12px;height:12px;vertical-align:-2px;"></i>
+            {% if meter %}Edit Meter{% else %}Register New Meter{% endif %}
+        </div>
+
+        <form method="post">
+            {% csrf_token %}
+
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 10px;">
+
+                {% if not meter %}
+                <div style="grid-column:1/-1;">
+                    <label for="serial_number" class="hmi-label" style="margin-bottom:2px;">Serial Number</label>
+                    <input type="text" name="serial_number" id="serial_number" class="hmi-input"
+                           style="padding:5px 8px;font-size:13px;" required>
+                </div>
+                {% endif %}
+
+                <div>
+                    <label for="meter_size" class="hmi-label" style="margin-bottom:2px;">Size</label>
+                    <select name="meter_size" id="meter_size" class="hmi-select" style="padding:5px 8px;font-size:13px;">
+                        {% for val, label in sizes %}
+                        <option value="{{ val }}" {% if meter.meter_size == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="meter_class" class="hmi-label" style="margin-bottom:2px;">Class</label>
+                    <select name="meter_class" id="meter_class" class="hmi-select" style="padding:5px 8px;font-size:13px;">
+                        {% for val, label in classes %}
+                        <option value="{{ val }}" {% if meter.meter_class == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="meter_type" class="hmi-label" style="margin-bottom:2px;">Type</label>
+                    <select name="meter_type" id="meter_type" class="hmi-select" style="padding:5px 8px;font-size:13px;">
+                        {% for val, label in types %}
+                        <option value="{{ val }}" {% if meter.meter_type == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="manufacturer" class="hmi-label" style="margin-bottom:2px;">Manufacturer</label>
+                    <input type="text" name="manufacturer" id="manufacturer" class="hmi-input"
+                           style="padding:5px 8px;font-size:13px;"
+                           value="{{ meter.manufacturer|default:'' }}">
+                </div>
+
+                <div>
+                    <label for="model_name" class="hmi-label" style="margin-bottom:2px;">Model</label>
+                    <input type="text" name="model_name" id="model_name" class="hmi-input"
+                           style="padding:5px 8px;font-size:13px;"
+                           value="{{ meter.model_name|default:'' }}">
+                </div>
+
+                <div>
+                    <label for="dut_mode" class="hmi-label" style="margin-bottom:2px;">DUT Mode</label>
+                    <select name="dut_mode" id="dut_mode" class="hmi-select" style="padding:5px 8px;font-size:13px;">
+                        {% for val, label in dut_modes %}
+                        <option value="{{ val }}" {% if meter.dut_mode == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="modbus_address" class="hmi-label" style="margin-bottom:2px;">Modbus Address</label>
+                    <input type="number" name="modbus_address" id="modbus_address" class="hmi-input"
+                           style="padding:5px 8px;font-size:13px;"
+                           value="{{ meter.modbus_address|default:'20' }}" min="1" max="247">
+                </div>
+
+                <div>
+                    <label for="modbus_baud" class="hmi-label" style="margin-bottom:2px;">Baud Rate</label>
+                    <input type="number" name="modbus_baud" id="modbus_baud" class="hmi-input"
+                           style="padding:5px 8px;font-size:13px;"
+                           value="{{ meter.modbus_baud|default:'9600' }}">
+                </div>
+
+                <div style="grid-column:1/-1;">
+                    <label for="notes" class="hmi-label" style="margin-bottom:2px;">Notes</label>
+                    <textarea name="notes" id="notes" class="hmi-input"
+                              style="padding:5px 8px;font-size:13px;resize:none;min-height:40px;">{{ meter.notes|default:'' }}</textarea>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:10px;justify-content:center;">
+                <button type="submit" class="btn-hmi btn-hmi-primary btn-hmi-sm"
+                        style="min-height:34px;padding:6px 28px;font-size:13px;">
+                    <i data-lucide="{% if meter %}save{% else %}plus-circle{% endif %}" style="width:14px;height:14px;"></i>
+                    {% if meter %}Update{% else %}Register{% endif %} Meter
+                </button>
+                <a href="{% url 'meters:meter_list' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm"
+                   style="min-height:34px;padding:6px 28px;font-size:13px;">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% else %}
+{# ── Lab: clean centered form ── #}
+<div style="display:flex;justify-content:center;">
+    <div class="lab-card" style="max-width:700px;width:100%;">
+        <form method="post">
+            {% csrf_token %}
+
+            {% if not meter %}
+            <div class="mb-3">
+                <label for="serial_number" class="form-label">Serial Number</label>
+                <input type="text" name="serial_number" id="serial_number" class="form-control" required>
+            </div>
+            {% endif %}
+
+            <div class="lab-form-grid">
+                <div>
+                    <label for="meter_size" class="form-label">Size</label>
+                    <select name="meter_size" id="meter_size" class="form-select">
+                        {% for val, label in sizes %}
+                        <option value="{{ val }}" {% if meter.meter_size == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="meter_class" class="form-label">Class</label>
+                    <select name="meter_class" id="meter_class" class="form-select">
+                        {% for val, label in classes %}
+                        <option value="{{ val }}" {% if meter.meter_class == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="meter_type" class="form-label">Type</label>
+                    <select name="meter_type" id="meter_type" class="form-select">
+                        {% for val, label in types %}
+                        <option value="{{ val }}" {% if meter.meter_type == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="dut_mode" class="form-label">DUT Mode</label>
+                    <select name="dut_mode" id="dut_mode" class="form-select">
+                        {% for val, label in dut_modes %}
+                        <option value="{{ val }}" {% if meter.dut_mode == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="manufacturer" class="form-label">Manufacturer</label>
+                    <input type="text" name="manufacturer" id="manufacturer" class="form-control"
+                           value="{{ meter.manufacturer|default:'' }}">
+                </div>
+                <div>
+                    <label for="model_name" class="form-label">Model</label>
+                    <input type="text" name="model_name" id="model_name" class="form-control"
+                           value="{{ meter.model_name|default:'' }}">
+                </div>
+                <div>
+                    <label for="modbus_address" class="form-label">Modbus Address</label>
+                    <input type="number" name="modbus_address" id="modbus_address" class="form-control"
+                           value="{{ meter.modbus_address|default:'20' }}" min="1" max="247">
+                </div>
+                <div>
+                    <label for="modbus_baud" class="form-label">Baud Rate</label>
+                    <input type="number" name="modbus_baud" id="modbus_baud" class="form-control"
+                           value="{{ meter.modbus_baud|default:'9600' }}">
+                </div>
+                <div class="full-width">
+                    <label for="notes" class="form-label">Notes</label>
+                    <textarea name="notes" id="notes" class="form-control" rows="2">{{ meter.notes|default:'' }}</textarea>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:16px;">
+                <button type="submit" class="btn btn-primary">
+                    {% if meter %}Update{% else %}Register{% endif %} Meter
+                </button>
+                <a href="{% url 'meters:meter_list' %}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

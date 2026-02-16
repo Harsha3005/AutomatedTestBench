@@ -1,0 +1,210 @@
+{% extends base_template %}
+
+{% block title %}New Test{% endblock %}
+{% block nav_tests %}active{% endblock %}
+{% block page_title %}New Test{% endblock %}
+{% block page_subtitle %}Submit a calibration test to the bench{% endblock %}
+{% block page_actions %}
+<a href="{% url 'testing:test_list' %}" class="btn-lab btn-lab-secondary btn-lab-sm">
+    <i data-lucide="arrow-left"></i> Back to Tests
+</a>
+{% endblock %}
+
+{% block content %}
+<div x-data="testWizard()" class="lab-card" style="max-width:900px;">
+    <!-- Step Indicator -->
+    <div class="wizard-stepper">
+        <template x-for="(s, i) in ['Select Meter', 'Review Q-Points', 'Confirm & Submit']" :key="i">
+            <div class="wizard-step"
+                 :class="{ 'wizard-step--active': step === i+1, 'wizard-step--done': step > i+1 }">
+                <div class="wizard-step-indicator">
+                    <div class="wizard-step-circle">
+                        <template x-if="step > i+1"><i data-lucide="check"></i></template>
+                        <template x-if="step <= i+1"><span x-text="i+1"></span></template>
+                    </div>
+                    <span class="wizard-step-label" x-text="s"></span>
+                </div>
+                <div x-show="i < 2" class="wizard-step-line"></div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Step 1: Select Meter -->
+    <div x-show="step === 1" x-transition>
+        <div class="lab-mb-md">
+            <input type="text" x-model="meterSearch" placeholder="Search by serial number or manufacturer..."
+                   class="form-control" style="max-width:400px;">
+        </div>
+        <div class="lab-overflow-x" style="max-height:400px;overflow-y:auto;">
+            {% for meter in meters %}
+            <div class="wizard-meter-row"
+                 :class="{ 'selected': selectedMeterId == {{ meter.pk }} }"
+                 @click="selectMeter({{ meter.pk }}, '{{ meter.serial_number }}', '{{ meter.meter_size }}', '{{ meter.meter_class }}')"
+                 x-show="!meterSearch || '{{ meter.serial_number }} {{ meter.manufacturer }}'.toLowerCase().includes(meterSearch.toLowerCase())">
+                <div class="wizard-meter-radio">
+                    <div class="wizard-meter-radio-dot"></div>
+                </div>
+                <div class="wizard-meter-info">
+                    <span class="wizard-meter-serial">{{ meter.serial_number }}</span>
+                    <span class="wizard-meter-meta">{{ meter.meter_size }}</span>
+                    <span class="wizard-meter-meta">{{ meter.meter_class }}</span>
+                    <span class="wizard-meter-meta">{{ meter.manufacturer|default:"—" }}</span>
+                    <span class="wizard-meter-meta">{{ meter.get_meter_type_display }}</span>
+                </div>
+            </div>
+            {% empty %}
+            <div class="lab-empty-state">
+                <i data-lucide="gauge"></i>
+                <p>No meters registered.</p>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="lab-flex-gap lab-mt-md">
+            <span class="lab-text-muted lab-text-sm">Don't see your meter?</span>
+            <a href="{% url 'meters:meter_create' %}" class="btn-lab btn-lab-secondary btn-lab-sm">
+                <i data-lucide="plus"></i> Register New Meter
+            </a>
+        </div>
+
+        <div class="wizard-actions wizard-actions--end">
+            <button @click="goStep2()" :disabled="!selectedMeterId" class="btn-lab btn-lab-primary"
+                    :style="!selectedMeterId ? 'opacity:0.5;cursor:not-allowed' : ''">
+                Next: Review Q-Points <i data-lucide="arrow-right"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Step 2: Review Q-Points -->
+    <div x-show="step === 2" x-transition>
+        <div class="lab-flex-gap lab-mb-lg">
+            <div class="wizard-summary-item">
+                <span class="wizard-summary-label">Meter</span>
+                <span class="wizard-summary-value" x-text="selectedMeterSerial"></span>
+            </div>
+            <div class="wizard-summary-item">
+                <span class="wizard-summary-label">Size</span>
+                <span class="wizard-summary-value" x-text="selectedMeterSize"></span>
+            </div>
+            <div class="wizard-summary-item">
+                <label class="wizard-summary-label">Test Class</label>
+                <select x-model="selectedClass" @change="loadQPoints()" class="form-select" style="min-width:120px;">
+                    {% for value, label in class_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="lab-overflow-x">
+            <table class="lab-table">
+                <thead>
+                    <tr>
+                        <th>Q-Point</th>
+                        <th>Flow Rate (L/h)</th>
+                        <th>Test Volume (L)</th>
+                        <th>MPE (%)</th>
+                        <th>Zone</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="qp in qPoints" :key="qp.q_point">
+                        <tr>
+                            <td class="col-bold" x-text="'Q' + qp.q_point"></td>
+                            <td x-text="qp.flow_rate_lph"></td>
+                            <td x-text="qp.test_volume_l"></td>
+                            <td x-text="'\u00B1' + qp.mpe_pct + '%'"></td>
+                            <td x-text="qp.zone"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+        <div x-show="qPoints.length === 0" class="lab-text-center lab-text-muted" style="padding:24px;">
+            No ISO 4064 data found for this meter size and class combination.
+        </div>
+
+        <div class="wizard-actions">
+            <button @click="step = 1" class="btn-lab btn-lab-secondary">
+                <i data-lucide="arrow-left"></i> Back
+            </button>
+            <button @click="step = 3" class="btn-lab btn-lab-primary">
+                Next: Confirm <i data-lucide="arrow-right"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Step 3: Confirm & Submit -->
+    <div x-show="step === 3" x-transition>
+        <div class="wizard-summary-grid">
+            <div class="wizard-summary-item">
+                <span class="wizard-summary-label">Meter</span>
+                <span class="wizard-summary-value" x-text="selectedMeterSerial + ' (' + selectedMeterSize + ')'"></span>
+            </div>
+            <div class="wizard-summary-item">
+                <span class="wizard-summary-label">Test Class</span>
+                <span class="wizard-summary-value" x-text="selectedClass"></span>
+            </div>
+            <div class="wizard-summary-item">
+                <span class="wizard-summary-label">Q-Points</span>
+                <span class="wizard-summary-value" x-text="qPoints.length + ' flow rates'"></span>
+            </div>
+            <div class="wizard-summary-item">
+                <span class="wizard-summary-label">Source</span>
+                <span class="wizard-summary-value">Lab Portal</span>
+            </div>
+        </div>
+
+        <div class="lab-mb-lg">
+            <label class="form-label">Notes (optional)</label>
+            <textarea x-model="notes" class="form-control" rows="3" placeholder="Add any notes for this test..."></textarea>
+        </div>
+
+        <form method="post" action="{% url 'lab_ui:test_wizard' %}">
+            {% csrf_token %}
+            <input type="hidden" name="meter_id" :value="selectedMeterId">
+            <input type="hidden" name="test_class" :value="selectedClass">
+            <input type="hidden" name="notes" :value="notes">
+            <div class="wizard-actions">
+                <button type="button" @click="step = 2" class="btn-lab btn-lab-secondary">
+                    <i data-lucide="arrow-left"></i> Back
+                </button>
+                <button type="submit" class="btn-lab btn-lab-success">
+                    <i data-lucide="send"></i> Submit to Bench
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    var ISO_DATA = {{ iso_data_json|safe }};
+    function testWizard() {
+        return {
+            step: 1,
+            meterSearch: '',
+            selectedMeterId: null,
+            selectedMeterSerial: '',
+            selectedMeterSize: '',
+            selectedClass: '',
+            qPoints: [],
+            notes: '',
+            selectMeter(id, serial, size, cls) {
+                this.selectedMeterId = id;
+                this.selectedMeterSerial = serial;
+                this.selectedMeterSize = size;
+                this.selectedClass = cls;
+            },
+            goStep2() {
+                if (!this.selectedMeterId) return;
+                this.loadQPoints();
+                this.step = 2;
+            },
+            loadQPoints() {
+                var key = this.selectedMeterSize + '_' + this.selectedClass;
+                this.qPoints = ISO_DATA[key] || [];
+            }
+        };
+    }
+</script>
+{% endblock %}

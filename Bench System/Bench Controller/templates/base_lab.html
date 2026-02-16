@@ -1,0 +1,153 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}IIITB Water Meter Lab{% endblock %}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+    <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
+    <link rel="stylesheet" href="{% static 'css/lab_dashboard.css' %}">
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="lab-dashboard">
+    {% block body %}
+    <!-- SIDEBAR -->
+    <aside class="lab-sidebar" id="labSidebar">
+        <div class="sidebar-brand">
+            <i data-lucide="droplets" class="icon-brand"></i>
+            <div>
+                <span class="sidebar-brand-title">IIITB Water Lab</span>
+                <span class="sidebar-brand-sub">I.R.A.S &mdash; A.C.M.I.S Technologies</span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <span class="sidebar-section-label">Main</span>
+            <a href="{% url 'lab_ui:dashboard' %}" class="sidebar-link {% block nav_dashboard %}{% endblock %}">
+                <i data-lucide="layout-dashboard"></i> Dashboard
+            </a>
+            <a href="{% url 'testing:test_list' %}" class="sidebar-link {% block nav_tests %}{% endblock %}">
+                <i data-lucide="clipboard-list"></i> Tests
+            </a>
+            <a href="{% url 'lab_ui:live_monitor' 0 %}" class="sidebar-link {% block nav_monitor %}{% endblock %}" id="sidebarMonitorLink" style="display:none;">
+                <i data-lucide="radio"></i> Live Monitor
+            </a>
+            <a href="{% url 'meters:meter_list' %}" class="sidebar-link {% block nav_meters %}{% endblock %}">
+                <i data-lucide="gauge"></i> Meters
+            </a>
+            <a href="{% url 'lab_ui:certificates' %}" class="sidebar-link {% block nav_certificates %}{% endblock %}">
+                <i data-lucide="file-badge"></i> Certificates
+            </a>
+            {% if user.role == 'admin' or user.role == 'manager' %}
+            <a href="{% url 'accounts:user_list' %}" class="sidebar-link {% block nav_users %}{% endblock %}">
+                <i data-lucide="users"></i> Users
+            </a>
+            {% endif %}
+
+            <div class="sidebar-divider"></div>
+            <span class="sidebar-section-label">System</span>
+
+            {% if user.role == 'admin' or user.role == 'manager' %}
+            <a href="{% url 'lab_ui:audit_log' %}" class="sidebar-link {% block nav_audit %}{% endblock %}">
+                <i data-lucide="scroll-text"></i> Audit Log
+            </a>
+            {% endif %}
+            {% if user.role == 'admin' %}
+            <a href="{% url 'lab_ui:settings' %}" class="sidebar-link {% block nav_settings %}{% endblock %}">
+                <i data-lucide="settings"></i> Settings
+            </a>
+            {% endif %}
+        </nav>
+
+        <!-- User section at bottom -->
+        <div class="sidebar-user">
+            {% if user.is_authenticated %}
+            <div class="sidebar-user-info">
+                <div class="sidebar-user-avatar">
+                    <i data-lucide="user"></i>
+                </div>
+                <div>
+                    <span class="sidebar-user-name">{{ user.get_full_name|default:user.username }}</span>
+                    <span class="sidebar-user-role">{{ user.get_role_display }}</span>
+                </div>
+            </div>
+            <div class="sidebar-user-actions">
+                <a href="{% url 'accounts:profile' %}" title="Profile"><i data-lucide="settings"></i> Profile</a>
+                <a href="{% url 'accounts:logout' %}" title="Logout"><i data-lucide="log-out"></i> Logout</a>
+            </div>
+            {% endif %}
+        </div>
+    </aside>
+
+    <!-- MOBILE TOPBAR -->
+    <header class="lab-topbar">
+        <button class="lab-sidebar-toggle" onclick="document.getElementById('labSidebar').classList.toggle('sidebar--open')">
+            <i data-lucide="menu"></i>
+        </button>
+        <span class="lab-topbar-title">{% block topbar_title %}IIITB Lab{% endblock %}</span>
+        {% if user.is_authenticated %}
+        <span class="lab-topbar-user">{{ user.username }}</span>
+        {% endif %}
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <div class="lab-main">
+        <!-- Page header -->
+        <div class="lab-page-header">
+            <div>
+                <h1 class="lab-page-title">{% block page_title %}{% endblock %}</h1>
+                <p class="lab-page-subtitle">{% block page_subtitle %}{% endblock %}</p>
+            </div>
+            <div class="lab-page-actions">{% block page_actions %}{% endblock %}</div>
+        </div>
+
+        <!-- Toast Messages -->
+        {% if messages %}
+        <div class="lab-toast-container" id="labToasts">
+            {% for message in messages %}
+            <div class="lab-toast lab-toast--{{ message.tags }}" role="alert">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Content -->
+        <main class="lab-content">
+            {% block content %}{% endblock %}
+        </main>
+
+        <!-- Footer -->
+        <footer class="lab-footer">
+            &copy; 2025 I.R.A.S &mdash; A Product by A.C.M.I.S Technologies LLP. All rights reserved.
+        </footer>
+    </div>
+
+    <!-- Sidebar overlay for mobile -->
+    <div class="lab-sidebar-overlay" onclick="document.getElementById('labSidebar').classList.remove('sidebar--open')"></div>
+    {% endblock body %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script>
+        lucide.createIcons();
+
+        // Auto-dismiss toasts after 4s
+        document.querySelectorAll('.lab-toast').forEach(function(t) {
+            setTimeout(function() { t.classList.add('lab-toast--hide'); }, 4000);
+            setTimeout(function() { t.remove(); }, 4500);
+        });
+    </script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,66 @@
+{% extends base_template %}
+
+{% block title %}Certificates{% endblock %}
+{% block nav_certificates %}active{% endblock %}
+{% block page_title %}Certificates{% endblock %}
+{% block page_subtitle %}Issued calibration certificates{% endblock %}
+
+{% block content %}
+<div class="lab-card">
+    <!-- Search -->
+    <div class="lab-mb-md">
+        <form method="get" action="{% url 'lab_ui:certificates' %}" class="lab-search-bar">
+            <input type="text" name="q" value="{{ search_q }}" placeholder="Search certificate # or serial..."
+                   class="form-control">
+            <button type="submit" class="btn btn-outline-primary">Search</button>
+            {% if search_q %}
+            <a href="{% url 'lab_ui:certificates' %}" class="btn btn-outline-secondary">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+
+    <div class="lab-overflow-x">
+        <table class="lab-table">
+            <thead>
+                <tr>
+                    <th>Certificate #</th>
+                    <th>Meter Serial</th>
+                    <th>Size</th>
+                    <th>Test Date</th>
+                    <th>Result</th>
+                    <th>Tested By</th>
+                    <th>Approved By</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in certs %}
+                <tr class="clickable" onclick="location.href='{% url 'testing:test_detail' t.pk %}'">
+                    <td class="col-mono col-bold">{{ t.certificate_number }}</td>
+                    <td>{{ t.meter.serial_number }}</td>
+                    <td>{{ t.meter.meter_size }}</td>
+                    <td class="col-muted">{{ t.completed_at|date:"d M Y"|default:"—" }}</td>
+                    <td>
+                        {% if t.overall_pass == True %}<span class="lab-badge lab-badge--pass">PASS</span>
+                        {% elif t.overall_pass == False %}<span class="lab-badge lab-badge--fail">FAIL</span>
+                        {% else %}&mdash;{% endif %}
+                    </td>
+                    <td>{% if t.initiated_by %}{{ t.initiated_by.get_full_name|default:t.initiated_by.username }}{% else %}—{% endif %}</td>
+                    <td>{% if t.approved_by %}{{ t.approved_by.get_full_name|default:t.approved_by.username }}{% else %}—{% endif %}</td>
+                    <td>{% if t.certificate_pdf %}<a href="{% url 'testing:download_certificate' t.pk %}" class="btn-lab btn-lab-sm btn-lab-ghost" onclick="event.stopPropagation();" title="Download PDF"><i data-lucide="download" style="width:16px;height:16px;"></i></a>{% endif %}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="8">
+                        <div class="lab-empty-state">
+                            <i data-lucide="file-badge"></i>
+                            <p>No certificates issued yet. Certificates are generated after test approval.</p>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

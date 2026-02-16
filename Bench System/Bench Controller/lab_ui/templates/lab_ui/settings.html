@@ -1,0 +1,121 @@
+{% extends base_template %}
+
+{% block title %}Settings{% endblock %}
+{% block nav_settings %}active{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block page_subtitle %}System configuration (read-only){% endblock %}
+
+{% block content %}
+<div class="lab-grid-2">
+
+    <!-- System Info -->
+    <div class="lab-card">
+        <div class="lab-card-header">
+            <span class="lab-card-title"><i data-lucide="server" class="settings-card-icon"></i>System</span>
+        </div>
+        <table class="lab-table">
+            <tbody>
+                <tr>
+                    <td class="settings-key">Django</td>
+                    <td class="settings-value">{{ info.django_version }}</td>
+                </tr>
+                <tr>
+                    <td class="settings-key">Python</td>
+                    <td class="settings-value">{{ info.python_version }}</td>
+                </tr>
+                <tr>
+                    <td class="settings-key">Deployment</td>
+                    <td><span class="lab-badge lab-badge--queued">{{ info.deployment_type }}</span></td>
+                </tr>
+                <tr>
+                    <td class="settings-key">Database</td>
+                    <td class="settings-value--mono-sm">{{ info.database }}</td>
+                </tr>
+                <tr>
+                    <td class="settings-key">Debug Mode</td>
+                    <td>
+                        {% if info.debug %}
+                        <span class="lab-badge lab-badge--failed">ON</span>
+                        {% else %}
+                        <span class="lab-badge lab-badge--completed">OFF</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td class="settings-key">Session Timeout</td>
+                    <td class="settings-value">{{ info.session_timeout }}s</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Communication -->
+    <div class="lab-card">
+        <div class="lab-card-header">
+            <span class="lab-card-title"><i data-lucide="radio" class="settings-card-icon"></i>Communication</span>
+        </div>
+        <table class="lab-table">
+            <tbody>
+                <tr>
+                    <td class="settings-key">Serial Port</td>
+                    <td class="settings-value--mono">{{ info.serial_port }}</td>
+                </tr>
+                <tr>
+                    <td class="settings-key">Baud Rate</td>
+                    <td class="settings-value">{{ info.serial_baud }}</td>
+                </tr>
+                <tr>
+                    <td class="settings-key">ASP Device ID</td>
+                    <td class="settings-value--mono">{{ info.asp_device_id }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Security -->
+    <div class="lab-card">
+        <div class="lab-card-header">
+            <span class="lab-card-title"><i data-lucide="shield" class="settings-card-icon"></i>Security</span>
+        </div>
+        <table class="lab-table">
+            <tbody>
+                <tr>
+                    <td class="settings-key">Crypto Status</td>
+                    <td>
+                        {% if info.crypto_status == 'Keys loaded' %}
+                        <span class="lab-badge lab-badge--completed">{{ info.crypto_status }}</span>
+                        {% else %}
+                        <span class="lab-badge lab-badge--failed">{{ info.crypto_status }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% if info.aes_key_len %}
+                <tr>
+                    <td class="settings-key">AES Key</td>
+                    <td class="settings-value">{{ info.aes_key_len }}-bit</td>
+                </tr>
+                <tr>
+                    <td class="settings-key">HMAC Key</td>
+                    <td class="settings-value">{{ info.hmac_key_len }}-bit</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- About -->
+    <div class="lab-card">
+        <div class="lab-card-header">
+            <span class="lab-card-title"><i data-lucide="info" class="settings-card-icon"></i>About</span>
+        </div>
+        <div class="settings-about">
+            <div class="settings-about-title">IIIT Bangalore Water Meter Test Bench</div>
+            <div class="settings-about-subtitle">I.R.A.S &mdash; A Product by A.C.M.I.S Technologies LLP</div>
+            <div class="settings-about-desc">
+                ISO 4064 compliant gravimetric calibration system with
+                LoRa communication (865 MHz, ASP encrypted).
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

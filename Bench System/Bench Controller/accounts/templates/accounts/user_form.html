@@ -1,0 +1,153 @@
+{% extends base_template %}
+
+{% block title %}{% if edit_user %}Edit User{% else %}Create User{% endif %}{% endblock %}
+{% block tab_settings %}active{% endblock %}
+{% block nav_users %}active{% endblock %}
+{% block page_title %}{% if edit_user %}Edit User: {{ edit_user.username }}{% else %}Create New User{% endif %}{% endblock %}
+
+{% block content %}
+{% if is_bench %}
+{# ── Bench: compact 2-column form ── #}
+<div class="hmi-card" style="padding:10px 14px;">
+    <form method="post">
+        {% csrf_token %}
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;">
+
+            {% if not edit_user %}
+            <div>
+                <label for="username" class="hmi-label" style="margin-bottom:2px;">Username</label>
+                <input type="text" name="username" id="username" class="hmi-input"
+                       style="padding:5px 8px;font-size:13px;" required>
+            </div>
+            {% endif %}
+
+            <div>
+                <label for="first_name" class="hmi-label" style="margin-bottom:2px;">First Name</label>
+                <input type="text" name="first_name" id="first_name" class="hmi-input"
+                       style="padding:5px 8px;font-size:13px;"
+                       value="{{ edit_user.first_name|default:'' }}">
+            </div>
+
+            <div>
+                <label for="last_name" class="hmi-label" style="margin-bottom:2px;">Last Name</label>
+                <input type="text" name="last_name" id="last_name" class="hmi-input"
+                       style="padding:5px 8px;font-size:13px;"
+                       value="{{ edit_user.last_name|default:'' }}">
+            </div>
+
+            <div>
+                <label for="email" class="hmi-label" style="margin-bottom:2px;">Email</label>
+                <input type="email" name="email" id="email" class="hmi-input"
+                       style="padding:5px 8px;font-size:13px;"
+                       value="{{ edit_user.email|default:'' }}">
+            </div>
+
+            <div>
+                <label for="role" class="hmi-label" style="margin-bottom:2px;">Role</label>
+                <select name="role" id="role" class="hmi-select" style="padding:5px 8px;font-size:13px;">
+                    {% for value, label in roles %}
+                    <option value="{{ value }}" {% if edit_user.role == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label for="password" class="hmi-label" style="margin-bottom:2px;">
+                    Password {% if edit_user %}<small style="opacity:0.5;">(blank = keep)</small>{% endif %}
+                </label>
+                <input type="password" name="password" id="password" class="hmi-input"
+                       style="padding:5px 8px;font-size:13px;"
+                       {% if not edit_user %}required{% endif %}>
+            </div>
+
+            {% if edit_user %}
+            <div style="display:flex;align-items:center;">
+                <label style="display:flex;align-items:center;gap:6px;color:var(--bench-text);font-size:13px;cursor:pointer;">
+                    <input type="checkbox" name="is_active" {% if edit_user.is_active %}checked{% endif %}
+                           style="width:16px;height:16px;accent-color:var(--bench-accent);">
+                    Account Active
+                </label>
+            </div>
+            {% endif %}
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:10px;justify-content:center;">
+            <button type="submit" class="btn-hmi btn-hmi-primary" style="min-height:32px;padding:4px 24px;font-size:13px;">
+                {% if edit_user %}Update{% else %}Create{% endif %} User
+            </button>
+            <a href="{% url 'bench_ui:settings' %}" class="btn-hmi btn-hmi-ghost" style="min-height:32px;padding:4px 24px;font-size:13px;">Cancel</a>
+        </div>
+    </form>
+</div>
+
+{% else %}
+{# ── Lab: original stacked layout ── #}
+<div class="lab-card" style="max-width:700px;">
+    <form method="post">
+        {% csrf_token %}
+        <div class="lab-form-grid">
+
+        {% if not edit_user %}
+        <div class="mb-3 full-width">
+            <label for="username" class="form-label">Username</label>
+            <input type="text" name="username" id="username" class="form-control" required>
+        </div>
+        {% endif %}
+
+        <div class="mb-3">
+            <label for="first_name" class="form-label">First Name</label>
+            <input type="text" name="first_name" id="first_name" class="form-control"
+                   value="{{ edit_user.first_name|default:'' }}">
+        </div>
+
+        <div class="mb-3">
+            <label for="last_name" class="form-label">Last Name</label>
+            <input type="text" name="last_name" id="last_name" class="form-control"
+                   value="{{ edit_user.last_name|default:'' }}">
+        </div>
+
+        <div class="mb-3">
+            <label for="email" class="form-label">Email</label>
+            <input type="email" name="email" id="email" class="form-control"
+                   value="{{ edit_user.email|default:'' }}">
+        </div>
+
+        <div class="mb-3">
+            <label for="role" class="form-label">Role</label>
+            <select name="role" id="role" class="form-select">
+                {% for value, label in roles %}
+                <option value="{{ value }}" {% if edit_user.role == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="mb-3">
+            <label for="password" class="form-label">
+                Password {% if edit_user %}<small style="opacity:0.6;">(leave blank to keep)</small>{% endif %}
+            </label>
+            <input type="password" name="password" id="password" class="form-control"
+                   {% if not edit_user %}required{% endif %}>
+        </div>
+
+        {% if edit_user %}
+        <div class="mb-3">
+            <label>
+                <input type="checkbox" name="is_active" {% if edit_user.is_active %}checked{% endif %}>
+                Account Active
+            </label>
+        </div>
+        {% endif %}
+
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:16px;">
+            <button type="submit" class="btn btn-primary">
+                {% if edit_user %}Update{% else %}Create{% endif %} User
+            </button>
+            <a href="{% url 'accounts:user_list' %}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endif %}
+{% endblock %}

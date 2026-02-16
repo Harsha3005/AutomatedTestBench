@@ -1,0 +1,35 @@
+[Unit]
+Description=IIITB Test Bench - Chromium Kiosk Display
+After=bench-django.service graphical.target
+Wants=bench-django.service
+PartOf=graphical.target
+
+[Service]
+Type=simple
+User=harshavardhan
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/harshavardhan/.Xauthority
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/chromium-browser \
+    --kiosk \
+    --noerrdialogs \
+    --disable-infobars \
+    --disable-translate \
+    --disable-features=TranslateUI \
+    --no-first-run \
+    --start-fullscreen \
+    --window-size=1024,600 \
+    --window-position=0,0 \
+    --disable-pinch \
+    --overscroll-history-navigation=0 \
+    --check-for-update-interval=31536000 \
+    --disable-session-crashed-bubble \
+    --autoplay-policy=no-user-gesture-required \
+    http://127.0.0.1:8000/
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical.target

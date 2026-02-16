@@ -1,0 +1,134 @@
+{% extends base_template %}
+
+{% block title %}Audit Log{% endblock %}
+{% block nav_audit %}active{% endblock %}
+{% block page_title %}Audit Log{% endblock %}
+{% block page_subtitle %}User activity and system events{% endblock %}
+{% block page_actions %}
+<a href="{% url 'lab_ui:audit_export' %}{% if filters.action %}?action={{ filters.action }}{% endif %}{% if filters.user %}&user={{ filters.user }}{% endif %}"
+   class="btn-lab btn-lab-secondary btn-lab-sm">
+    <i data-lucide="download"></i> Export CSV
+</a>
+{% endblock %}
+
+{% block content %}
+<!-- Filters -->
+<div class="lab-card lab-mb-md">
+    <form method="get" action="{% url 'lab_ui:audit_log' %}" class="lab-filter-bar">
+        <div>
+            <label class="form-label">Action</label>
+            <select name="action" class="form-select">
+                <option value="">All Actions</option>
+                {% for a in action_choices %}
+                <option value="{{ a }}" {% if filters.action == a %}selected{% endif %}>{{ a|capfirst }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label">User</label>
+            <select name="user" class="form-select">
+                <option value="">All Users</option>
+                {% for u in all_users %}
+                <option value="{{ u.pk }}" {% if filters.user == u.pk|stringformat:"d" %}selected{% endif %}>{{ u.get_full_name|default:u.username }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label">Target Type</label>
+            <select name="target_type" class="form-select">
+                <option value="">All</option>
+                <option value="test" {% if filters.target_type == 'test' %}selected{% endif %}>Test</option>
+                <option value="meter" {% if filters.target_type == 'meter' %}selected{% endif %}>Meter</option>
+                <option value="user" {% if filters.target_type == 'user' %}selected{% endif %}>User</option>
+                <option value="settings" {% if filters.target_type == 'settings' %}selected{% endif %}>Settings</option>
+            </select>
+        </div>
+        <div>
+            <label class="form-label">From</label>
+            <input type="date" name="date_from" value="{{ filters.date_from }}" class="form-control">
+        </div>
+        <div>
+            <label class="form-label">To</label>
+            <input type="date" name="date_to" value="{{ filters.date_to }}" class="form-control">
+        </div>
+        <div class="lab-filter-actions">
+            <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+            <a href="{% url 'lab_ui:audit_log' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
+        </div>
+    </form>
+</div>
+
+<!-- Audit Entries Table -->
+<div class="lab-card">
+    {% if page_obj %}
+    <div class="lab-overflow-x">
+        <table class="lab-table">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Target</th>
+                    <th>Description</th>
+                    <th>IP Address</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in page_obj %}
+                <tr>
+                    <td class="col-mono lab-text-sm">{{ entry.timestamp|date:"d M Y H:i:s" }}</td>
+                    <td>{% if entry.user %}{{ entry.user.get_full_name|default:entry.user.username }}{% else %}<span class="lab-text-muted lab-text-italic">system</span>{% endif %}</td>
+                    <td>
+                        <span class="lab-badge {% if entry.action == 'login' or entry.action == 'logout' %}lab-badge--queued{% elif entry.action == 'create' %}lab-badge--completed{% elif entry.action == 'update' %}lab-badge--acknowledged{% elif entry.action == 'delete' %}lab-badge--failed{% elif entry.action == 'approve' %}lab-badge--pass{% elif entry.action == 'reject' %}lab-badge--fail{% elif entry.action == 'export' %}lab-badge--running{% else %}lab-badge--aborted{% endif %}">
+                            {{ entry.get_action_display }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if entry.target_type %}
+                        {{ entry.target_type|capfirst }}{% if entry.target_id %} #{{ entry.target_id }}{% endif %}
+                        {% else %}&mdash;{% endif %}
+                    </td>
+                    <td class="lab-desc-truncate">{{ entry.description|default:"—" }}</td>
+                    <td class="col-mono lab-text-xs lab-text-muted">{{ entry.ip_address|default:"—" }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6">
+                        <div class="lab-empty-state">
+                            <i data-lucide="scroll-text"></i>
+                            <p>No audit entries found.</p>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <div class="lab-pagination">
+        <span class="lab-pagination-info">
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+            ({{ page_obj.paginator.count }} entries)
+        </span>
+        <div class="lab-pagination-buttons">
+            {% if page_obj.has_previous %}
+            <a href="?page={{ page_obj.previous_page_number }}{% if filters.action %}&action={{ filters.action }}{% endif %}{% if filters.user %}&user={{ filters.user }}{% endif %}{% if filters.target_type %}&target_type={{ filters.target_type }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}"
+               class="btn-lab btn-lab-secondary btn-lab-sm">Previous</a>
+            {% endif %}
+            {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}{% if filters.action %}&action={{ filters.action }}{% endif %}{% if filters.user %}&user={{ filters.user }}{% endif %}{% if filters.target_type %}&target_type={{ filters.target_type }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}"
+               class="btn-lab btn-lab-primary btn-lab-sm">Next</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="lab-empty-state">
+        <i data-lucide="scroll-text"></i>
+        <p>Audit logging is not available.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

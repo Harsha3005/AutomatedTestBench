@@ -1,0 +1,73 @@
+{% extends base_template %}
+
+{% block title %}Approve Test #{{ test.pk }}{% endblock %}
+{% block tab_history %}active{% endblock %}
+{% block nav_tests %}active{% endblock %}
+{% block page_title %}Review Test #{{ test.pk }} — {{ test.meter.serial_number }}{% endblock %}
+
+{% block content %}
+<div class="{% if is_bench %}hmi-card{% else %}lab-card{% endif %}" style="max-width:800px;">
+    <!-- Overall result badge -->
+    <div style="margin-bottom:16px;">
+        {% if test.overall_pass %}
+        <span class="{% if is_bench %}hmi-badge hmi-badge--pass{% else %}lab-badge lab-badge--pass{% endif %}" style="font-size:14px;padding:6px 16px;">OVERALL PASSED</span>
+        {% else %}
+        <span class="{% if is_bench %}hmi-badge hmi-badge--fail{% else %}lab-badge lab-badge--fail{% endif %}" style="font-size:14px;padding:6px 16px;">OVERALL FAILED</span>
+        {% endif %}
+    </div>
+
+    <!-- Results summary table -->
+    <div style="overflow-x:auto;margin-bottom:20px;">
+        <table class="{% if is_bench %}qpoint-table{% else %}lab-table{% endif %}">
+            <thead>
+                <tr><th>Q-Point</th><th>Error %</th><th>MPE %</th><th>Result</th></tr>
+            </thead>
+            <tbody>
+                {% for r in test.results.all %}
+                <tr class="{% if is_bench %}{% if r.passed == True %}qpoint-row--pass{% elif r.passed == False %}qpoint-row--fail{% endif %}{% endif %}">
+                    <td style="font-weight:600;">{{ r.q_point }}</td>
+                    <td>{{ r.error_pct|default:"—" }}%</td>
+                    <td>&plusmn;{{ r.mpe_pct }}%</td>
+                    <td>
+                        {% if r.passed == True %}
+                        <span class="{% if is_bench %}hmi-badge hmi-badge--pass{% else %}lab-badge lab-badge--pass{% endif %}">PASS</span>
+                        {% elif r.passed == False %}
+                        <span class="{% if is_bench %}hmi-badge hmi-badge--fail{% else %}lab-badge lab-badge--fail{% endif %}">FAIL</span>
+                        {% else %}
+                        <span class="{% if is_bench %}hmi-badge hmi-badge--pending{% else %}lab-badge lab-badge--aborted{% endif %}">PENDING</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Approval form -->
+    <form method="post">
+        {% csrf_token %}
+        <div class="{% if is_bench %}hmi-form-group{% else %}mb-3{% endif %}">
+            <label for="comment" class="{% if is_bench %}hmi-label{% else %}form-label{% endif %}">Comment (optional)</label>
+            {% if is_bench %}
+            <textarea name="comment" id="comment" class="hmi-textarea" rows="2"></textarea>
+            {% else %}
+            <textarea name="comment" id="comment" class="form-control" rows="2"></textarea>
+            {% endif %}
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button type="submit" name="action" value="approve"
+                    class="{% if is_bench %}btn-hmi btn-hmi-success{% else %}btn btn-success btn-lg{% endif %}">
+                Approve
+            </button>
+            <button type="submit" name="action" value="reject"
+                    class="{% if is_bench %}btn-hmi btn-hmi-danger{% else %}btn btn-danger btn-lg{% endif %}">
+                Reject
+            </button>
+            <a href="{% url 'testing:test_detail' test.pk %}"
+               class="{% if is_bench %}btn-hmi btn-hmi-ghost{% else %}btn btn-outline-secondary btn-lg{% endif %}">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,163 @@
+{% extends "base_bench.html" %}
+{% load static %}
+
+{% block title %}Results — Test #{{ test.pk }}{% endblock %}
+{% block tab_test %}active{% endblock %}
+{% block page_title %}Test #{{ test.pk }} Results{% endblock %}
+
+{% block content %}
+<div x-data="{ showChart: false }" style="height:100%;display:flex;flex-direction:column;gap:6px;">
+
+    <!-- Verdict Banner -->
+    <div class="hmi-card" style="padding:10px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0;">
+        {% if summary.overall_pass %}
+        <span class="hmi-badge hmi-badge--pass" style="font-size:18px;padding:8px 20px;">PASS</span>
+        {% elif summary.overall_pass == False %}
+        <span class="hmi-badge hmi-badge--fail" style="font-size:18px;padding:8px 20px;">FAIL</span>
+        {% else %}
+        <span class="hmi-badge hmi-badge--pending" style="font-size:18px;padding:8px 20px;">PENDING</span>
+        {% endif %}
+        <div style="flex:1;">
+            <div style="font-size:14px;font-weight:600;">{{ test.meter.serial_number }}</div>
+            <div style="font-size:11px;color:var(--bench-text-muted);">{{ test.meter.meter_size }} &middot; {{ test.get_test_class_display }}</div>
+        </div>
+        <div style="display:flex;gap:16px;text-align:center;">
+            <div>
+                <div class="mono" style="font-size:16px;font-weight:700;color:var(--bench-success);">{{ summary.passed_points }}</div>
+                <div style="font-size:9px;color:var(--bench-text-muted);text-transform:uppercase;letter-spacing:1px;">Pass</div>
+            </div>
+            <div>
+                <div class="mono" style="font-size:16px;font-weight:700;color:var(--bench-danger);">{{ summary.failed_points }}</div>
+                <div style="font-size:9px;color:var(--bench-text-muted);text-transform:uppercase;letter-spacing:1px;">Fail</div>
+            </div>
+            <div>
+                <div class="mono" style="font-size:16px;font-weight:700;">{{ summary.completed_points }}/{{ summary.total_points }}</div>
+                <div style="font-size:9px;color:var(--bench-text-muted);text-transform:uppercase;letter-spacing:1px;">Done</div>
+            </div>
+            {% if summary.avg_error_pct != None %}
+            <div>
+                <div class="mono" style="font-size:16px;font-weight:700;color:var(--bench-accent);">{{ summary.avg_error_pct }}%</div>
+                <div style="font-size:9px;color:var(--bench-text-muted);text-transform:uppercase;letter-spacing:1px;">Avg Err</div>
+            </div>
+            {% endif %}
+        </div>
+        <button class="btn-hmi btn-hmi-ghost btn-hmi-sm" @click="showChart = !showChart"
+                style="margin-left:8px;">
+            <i data-lucide="line-chart" class="icon-sm"></i>
+            <span x-text="showChart ? 'Hide' : 'Curve'"></span>
+        </button>
+    </div>
+
+    <!-- Error Curve Chart (toggle) -->
+    <div x-show="showChart" x-cloak class="hmi-card" style="flex-shrink:0;height:240px;padding:8px;">
+        <canvas id="errorCurveChart" style="width:100%;height:100%;"></canvas>
+    </div>
+
+    <!-- Zone Verdicts -->
+    <div style="display:flex;gap:4px;flex-shrink:0;">
+        <div class="hmi-card" style="flex:1;padding:8px 12px;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:11px;font-weight:600;color:var(--bench-text-muted);text-transform:uppercase;letter-spacing:1px;">Lower Zone</span>
+            {% if summary.lower_zone_pass %}
+            <span class="hmi-badge hmi-badge--pass" style="margin-left:auto;">PASS</span>
+            {% elif summary.lower_zone_pass == False %}
+            <span class="hmi-badge hmi-badge--fail" style="margin-left:auto;">FAIL</span>
+            {% else %}
+            <span class="hmi-badge hmi-badge--pending" style="margin-left:auto;">—</span>
+            {% endif %}
+        </div>
+        <div class="hmi-card" style="flex:1;padding:8px 12px;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:11px;font-weight:600;color:var(--bench-text-muted);text-transform:uppercase;letter-spacing:1px;">Upper Zone</span>
+            {% if summary.upper_zone_pass %}
+            <span class="hmi-badge hmi-badge--pass" style="margin-left:auto;">PASS</span>
+            {% elif summary.upper_zone_pass == False %}
+            <span class="hmi-badge hmi-badge--fail" style="margin-left:auto;">FAIL</span>
+            {% else %}
+            <span class="hmi-badge hmi-badge--pending" style="margin-left:auto;">—</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Swipeable Q-Point Cards -->
+    <div class="scroll-snap-container" style="flex:1;overflow-x:auto;overflow-y:hidden;display:flex;gap:8px;padding:4px 0;">
+        {% for qp in summary.q_points %}
+        <div class="scroll-snap-card hmi-card" style="min-width:260px;max-width:280px;flex-shrink:0;padding:12px;display:flex;flex-direction:column;gap:6px;">
+            <!-- Header -->
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-size:18px;font-weight:700;">{{ qp.q_point }}</span>
+                <span class="hmi-badge" style="font-size:10px;"
+                      class="hmi-badge {% if qp.zone == 'Lower' %}hmi-badge--warning{% else %}hmi-badge--running{% endif %}">
+                    {{ qp.zone }}
+                </span>
+            </div>
+            <!-- Flow Rate -->
+            <div style="font-size:12px;color:var(--bench-text-muted);">
+                Target: <span class="mono" style="color:var(--bench-text);">{{ qp.target_flow_lph }} L/h</span>
+            </div>
+            <!-- Volumes -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+                <div style="background:var(--bench-surface);border-radius:6px;padding:6px 8px;">
+                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:600;">Ref Vol</div>
+                    <div class="mono" style="font-size:14px;font-weight:600;">{% if qp.ref_volume_l != None %}{{ qp.ref_volume_l|floatformat:3 }} L{% else %}—{% endif %}</div>
+                </div>
+                <div style="background:var(--bench-surface);border-radius:6px;padding:6px 8px;">
+                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:600;">DUT Vol</div>
+                    <div class="mono" style="font-size:14px;font-weight:600;">{% if qp.dut_volume_l != None %}{{ qp.dut_volume_l|floatformat:3 }} L{% else %}—{% endif %}</div>
+                </div>
+            </div>
+            <!-- Error vs MPE -->
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 0;">
+                <div style="flex:1;">
+                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:600;">Error</div>
+                    <div class="mono" style="font-size:20px;font-weight:700;{% if qp.passed %}color:var(--bench-success);{% elif qp.passed == False %}color:var(--bench-danger);{% endif %}">
+                        {% if qp.error_pct != None %}{{ qp.error_pct }}%{% else %}—{% endif %}
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:600;">MPE</div>
+                    <div class="mono" style="font-size:14px;">&plusmn;{{ qp.mpe_pct }}%</div>
+                </div>
+            </div>
+            <!-- Result Badge -->
+            <div style="margin-top:auto;">
+                {% if qp.passed %}
+                <span class="hmi-badge hmi-badge--pass" style="width:100%;display:flex;justify-content:center;padding:6px;">PASS</span>
+                {% elif qp.passed == False %}
+                <span class="hmi-badge hmi-badge--fail" style="width:100%;display:flex;justify-content:center;padding:6px;">FAIL</span>
+                {% else %}
+                <span class="hmi-badge hmi-badge--pending" style="width:100%;display:flex;justify-content:center;padding:6px;">PENDING</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Navigation -->
+    <div style="display:flex;gap:8px;flex-shrink:0;">
+        <a href="{% url 'bench_ui:test_control' %}" class="btn-hmi btn-hmi-ghost" style="min-height:36px;">
+            <i data-lucide="arrow-left" class="icon-sm"></i> Back
+        </a>
+        <div style="flex:1;"></div>
+        {% if test.status == 'completed' and test.overall_pass %}
+        <a href="{% url 'testing:test_detail' test.pk %}" class="btn-hmi btn-hmi-primary" style="min-height:36px;">
+            <i data-lucide="file-text" class="icon-sm"></i> Full Report
+        </a>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/error_curve.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var qpData = {{ qpoint_chart_json|safe }};
+    var mpeData = {{ mpe_chart_json|safe }};
+    // Only render if there are completed results
+    if (qpData.some(function(d) { return d.error_pct != null; })) {
+        renderErrorCurve('errorCurveChart', qpData, mpeData);
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends "base_bench.html" %}
+{% load static %}
+
+{% block title %}Setup — Bench Configuration{% endblock %}
+{% block tab_settings %}active{% endblock %}
+{% block page_title %}Setup{% endblock %}
+
+{% block content %}
+<div style="height:100%;display:flex;flex-direction:column;gap:6px;">
+
+    <!-- Top row: 3-column config cards -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;flex:1;overflow:hidden;">
+
+        <!-- PID Tuning -->
+        <div class="hmi-card" style="padding:10px 12px;display:flex;flex-direction:column;">
+            <div class="hmi-card-title" style="margin-bottom:8px;">
+                <i data-lucide="sliders-horizontal" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>
+                PID Tuning
+            </div>
+            <div style="flex:1;overflow-y:auto;">
+                <table class="hmi-table" style="margin:0;">
+                    <tbody>
+                        {% for label, value in pid_config.items %}
+                        <tr>
+                            <td style="color:var(--bench-text-muted);font-size:11px;width:55%;">{{ label }}</td>
+                            <td class="mono" style="font-size:13px;font-weight:600;">{{ value }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--bench-card-border);font-size:10px;color:var(--bench-text-dim);">
+                Configured in settings_bench.py
+            </div>
+        </div>
+
+        <!-- Safety Limits -->
+        <div class="hmi-card" style="padding:10px 12px;display:flex;flex-direction:column;">
+            <div class="hmi-card-title" style="margin-bottom:8px;">
+                <i data-lucide="shield-alert" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>
+                Safety Limits
+            </div>
+            <div style="flex:1;overflow-y:auto;">
+                <table class="hmi-table" style="margin:0;">
+                    <tbody>
+                        {% for label, value in safety_config.items %}
+                        <tr>
+                            <td style="color:var(--bench-text-muted);font-size:11px;width:55%;">{{ label }}</td>
+                            <td class="mono" style="font-size:13px;font-weight:600;">{{ value }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--bench-card-border);font-size:10px;color:var(--bench-text-dim);">
+                Safety monitor enforces these limits
+            </div>
+        </div>
+
+        <!-- Serial / Communication -->
+        <div class="hmi-card" style="padding:10px 12px;display:flex;flex-direction:column;">
+            <div class="hmi-card-title" style="margin-bottom:8px;">
+                <i data-lucide="cable" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>
+                Serial Config
+            </div>
+            <div style="flex:1;overflow-y:auto;">
+                <table class="hmi-table" style="margin:0;">
+                    <tbody>
+                        {% for label, value in serial_config.items %}
+                        <tr>
+                            <td style="color:var(--bench-text-muted);font-size:11px;width:45%;">{{ label }}</td>
+                            <td class="mono" style="font-size:12px;font-weight:600;word-break:break-all;">{{ value }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--bench-card-border);font-size:10px;color:var(--bench-text-dim);">
+                Hardware bus configuration
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Bottom row: System info -->
+    <div class="hmi-card" style="padding:8px 12px;flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:24px;font-size:11px;">
+            <div>
+                <span style="color:var(--bench-text-muted);margin-right:4px;">Deployment:</span>
+                <span class="hmi-badge hmi-badge--running" style="font-size:10px;">{{ deployment_type }}</span>
+            </div>
+            <div>
+                <span style="color:var(--bench-text-muted);margin-right:4px;">Python:</span>
+                <span class="mono">{{ python_version }}</span>
+            </div>
+            <div>
+                <span style="color:var(--bench-text-muted);margin-right:4px;">Bench ID:</span>
+                <span class="mono">{{ bench_settings.bench_id }}</span>
+            </div>
+            <div>
+                <span style="color:var(--bench-text-muted);margin-right:4px;">Theme:</span>
+                <span>{{ bench_settings.theme }}</span>
+            </div>
+            <div>
+                <span style="color:var(--bench-text-muted);margin-right:4px;">Auto-Lock:</span>
+                <span class="mono">{{ bench_settings.auto_lock_timeout }}s</span>
+            </div>
+            <div style="margin-left:auto;">
+                <a href="{% url 'bench_ui:settings' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm" style="min-height:26px;font-size:10px;">
+                    <i data-lucide="settings" style="width:12px;height:12px;"></i> Edit Settings
+                </a>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

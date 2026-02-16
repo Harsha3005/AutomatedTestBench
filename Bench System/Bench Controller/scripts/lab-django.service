@@ -1,0 +1,23 @@
+[Unit]
+Description=IIITB Water Meter Calibration Lab - Django/Gunicorn WSGI Server
+After=network.target
+
+[Service]
+Type=simple
+User=harshavardhan
+Group=harshavardhan
+WorkingDirectory=/home/harshavardhan/I.R.A.S/Water Flow Meter Calibration System/Bench System/Bench Controller
+Environment=DJANGO_SETTINGS_MODULE=config.settings_lab
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/harshavardhan/I.R.A.S/Water Flow Meter Calibration System/Bench System/Bench Controller/venv/bin/gunicorn \
+    --bind 0.0.0.0:8080 \
+    --workers 3 \
+    --timeout 120 \
+    config.wsgi:application
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

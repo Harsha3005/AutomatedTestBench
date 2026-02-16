@@ -1,0 +1,85 @@
+{% extends "base_bench.html" %}
+{% load static %}
+
+{% block title %}Test History{% endblock %}
+{% block tab_test %}active{% endblock %}
+{% block page_title %}Test History{% endblock %}
+
+{% block content %}
+<div style="height:100%;display:flex;flex-direction:column;gap:6px;">
+
+    <!-- Header bar -->
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <a href="{% url 'bench_ui:dashboard' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm" style="min-height:32px;">
+            <i data-lucide="arrow-left" class="icon-sm"></i> Dashboard
+        </a>
+        <div style="flex:1;"></div>
+        <span style="font-size:11px;color:var(--bench-text-muted);">{{ tests|length }} test{{ tests|length|pluralize }}</span>
+    </div>
+
+    <!-- Test Grid (scrollable) -->
+    <div x-data="{ expanded: null }" style="flex:1;overflow-y:auto;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            {% for test in tests %}
+            <div class="hmi-card history-card" style="padding:10px 12px;cursor:pointer;"
+                 @click="expanded = expanded === {{ test.pk }} ? null : {{ test.pk }}">
+                <!-- Card Header -->
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                    <span style="font-weight:700;font-size:13px;">Test #{{ test.pk }}</span>
+                    <span class="hmi-badge hmi-badge--{{ test.status }}" style="font-size:9px;">{{ test.get_status_display }}</span>
+                    {% if test.overall_pass == True %}
+                    <span class="hmi-badge hmi-badge--pass" style="font-size:9px;margin-left:auto;">PASS</span>
+                    {% elif test.overall_pass == False %}
+                    <span class="hmi-badge hmi-badge--fail" style="font-size:9px;margin-left:auto;">FAIL</span>
+                    {% else %}
+                    <span style="margin-left:auto;"></span>
+                    {% endif %}
+                </div>
+                <!-- Card Body -->
+                <div style="display:flex;align-items:center;gap:8px;font-size:11px;">
+                    <span style="font-weight:500;">{{ test.meter.serial_number }}</span>
+                    <span style="color:var(--bench-text-dim);">{{ test.meter.meter_size }}</span>
+                    <span class="mono" style="color:var(--bench-text-dim);font-size:10px;margin-left:auto;">{{ test.created_at|date:"d M H:i" }}</span>
+                </div>
+
+                <!-- Expandable Q-Point Summary (accordion) -->
+                <div x-show="expanded === {{ test.pk }}" x-cloak x-collapse
+                     style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bench-card-border);">
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">
+                        {% for r in test.results.all %}
+                        <div style="display:flex;align-items:center;gap:3px;padding:2px 6px;background:var(--bench-surface);border-radius:4px;font-size:10px;">
+                            <span style="font-weight:600;">{{ r.q_point }}</span>
+                            {% if r.passed %}
+                            <span style="color:var(--bench-success);">&#10003;</span>
+                            {% elif r.passed == False %}
+                            <span style="color:var(--bench-danger);">&#10007;</span>
+                            {% else %}
+                            <span style="color:var(--bench-text-dim);">—</span>
+                            {% endif %}
+                            {% if r.error_pct != None %}
+                            <span class="mono" style="color:var(--bench-text-muted);">{{ r.error_pct }}%</span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div style="display:flex;gap:4px;">
+                        <a href="{% url 'bench_ui:test_results' test.pk %}" class="btn-hmi btn-hmi-primary btn-hmi-sm" style="flex:1;min-height:28px;font-size:11px;"
+                           @click.stop>
+                            <i data-lucide="bar-chart-2" style="width:12px;height:12px;"></i> Results
+                        </a>
+                        <a href="{% url 'testing:test_detail' test.pk %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm" style="flex:1;min-height:28px;font-size:11px;"
+                           @click.stop>
+                            <i data-lucide="file-text" style="width:12px;height:12px;"></i> Detail
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% empty %}
+            <div class="hmi-card" style="grid-column:1/-1;padding:32px;text-align:center;color:var(--bench-text-muted);">
+                No tests found.
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

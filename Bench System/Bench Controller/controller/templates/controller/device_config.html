@@ -1,0 +1,344 @@
+{% extends "base_bench.html" %}
+{% load static %}
+
+{% block title %}Device Configuration — IIITB Test Bench{% endblock %}
+{% block tab_system %}active{% endblock %}
+
+{% block page_title %}
+    <a href="{% url 'bench_ui:system_status' %}" class="sys-back-link">
+        <i data-lucide="arrow-left" class="icon-sm"></i>
+    </a>
+    Device Configuration
+{% endblock %}
+
+{# Inline SVG icon helpers — these work inside Alpine x-for (no lucide.createIcons needed) #}
+{% block content %}
+<div x-data="deviceConfig()" x-init="init()" class="sys-config-container">
+
+    {# SVG icon templates (hidden, referenced by innerHTML) #}
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none;">
+        <symbol id="ico-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>
+        </symbol>
+        <symbol id="ico-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>
+        </symbol>
+        <symbol id="ico-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>
+        </symbol>
+        <symbol id="ico-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+        </symbol>
+        <symbol id="ico-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+        </symbol>
+        <symbol id="ico-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/>
+        </symbol>
+        <symbol id="ico-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+        </symbol>
+    </svg>
+
+    <div class="bench-grid" style="grid-template-columns:2fr 1fr;height:100%;">
+
+        <!-- Left: Devices Table -->
+        <div class="hmi-card" style="overflow-y:auto;display:flex;flex-direction:column;">
+            <div class="hmi-card-title" style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+                <span>Devices</span>
+                <button class="sys-action-btn sys-action-btn--save" @click="openDeviceForm()"
+                    style="padding:0 14px;height:34px;">
+                    <svg class="sys-ico"><use href="#ico-plus"/></svg> Add Device
+                </button>
+            </div>
+            <div style="overflow-y:auto;flex:1;">
+                <table class="hmi-table" style="font-size:12px;">
+                    <thead>
+                        <tr>
+                            <th style="width:70px;">ID</th>
+                            <th>Name</th>
+                            <th style="width:90px;">Category</th>
+                            <th style="width:90px;">Group</th>
+                            <th style="width:40px;">Unit</th>
+                            <th style="width:130px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="dev in deviceList" :key="dev.pk">
+                            <tr :style="!dev.is_active && 'opacity:0.35'">
+                                <td class="mono" style="font-weight:600;font-size:11px;" x-text="dev.device_id"></td>
+                                <td style="font-size:11px;" x-text="dev.name"></td>
+                                <td style="font-size:10px;color:var(--bench-text-muted);" x-text="catLabel(dev.category)"></td>
+                                <td>
+                                    <span x-show="groupColor(dev.group_id)"
+                                        :style="'display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle;margin-right:4px;background:' + groupColor(dev.group_id)"></span>
+                                    <span style="font-size:10px;" x-text="groupName(dev.group_id)"></span>
+                                </td>
+                                <td class="mono" style="font-size:10px;" x-text="dev.unit || '—'"></td>
+                                <td>
+                                    <div style="display:flex;gap:4px;">
+                                        <!-- Edit -->
+                                        <button class="sys-action-btn" @click="openDeviceForm(dev)" title="Edit">
+                                            <svg class="sys-ico"><use href="#ico-pencil"/></svg>
+                                        </button>
+                                        <!-- Active toggle -->
+                                        <button class="sys-action-btn" @click="toggleActive(dev)"
+                                            :title="dev.is_active ? 'Disable device' : 'Enable device'">
+                                            <template x-if="dev.is_active">
+                                                <svg class="sys-ico" style="color:#4CAF50;"><use href="#ico-eye"/></svg>
+                                            </template>
+                                            <template x-if="!dev.is_active">
+                                                <svg class="sys-ico" style="color:var(--bench-text-dim);"><use href="#ico-eye-off"/></svg>
+                                            </template>
+                                        </button>
+                                        <!-- Delete -->
+                                        <button class="sys-action-btn sys-action-btn--danger" @click="deleteDevice(dev)" title="Delete">
+                                            <svg class="sys-ico"><use href="#ico-trash"/></svg>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Right: Groups Management -->
+        <div class="hmi-card" style="overflow-y:auto;display:flex;flex-direction:column;">
+            <div class="hmi-card-title" style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+                Groups
+                <button class="sys-action-btn sys-action-btn--save" @click="newGroup()"
+                    style="padding:0 14px;height:34px;">
+                    <svg class="sys-ico"><use href="#ico-plus"/></svg> Add Group
+                </button>
+            </div>
+            <div style="overflow-y:auto;flex:1;">
+                <template x-for="group in groupList" :key="group.id || group._tmpId">
+                    <div class="sys-config-group-row">
+                        <input type="color" class="sys-config-color" x-model="group.color"
+                            title="Group color">
+                        <input type="text" class="sys-config-input" x-model="group.name"
+                            placeholder="Group name" style="flex:1;">
+                        <input type="number" class="sys-config-input sys-config-order"
+                            x-model.number="group.display_order" placeholder="#" min="0"
+                            title="Display order" style="width:48px;">
+                        <!-- Save (icon only) -->
+                        <button class="sys-action-btn sys-action-btn--save" @click="saveGroup(group)"
+                            title="Save group">
+                            <svg class="sys-ico"><use href="#ico-check"/></svg>
+                        </button>
+                        <!-- Delete (icon, white text) -->
+                        <button class="sys-action-btn sys-action-btn--danger" @click="deleteGroup(group)"
+                            title="Delete group">
+                            <svg class="sys-ico"><use href="#ico-trash"/></svg>
+                        </button>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Device Add/Edit Modal -->
+    <div x-show="formOpen" x-cloak class="sys-confirm-overlay" @click.self="formOpen = false">
+        <div class="sys-confirm-dialog" style="min-width:420px;">
+            <div class="sys-confirm-title" x-text="formDevice.pk ? 'Edit Device' : 'Add Device'"></div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+                <div>
+                    <label class="form-label">Device ID</label>
+                    <input type="text" class="sys-config-input" style="width:100%;height:36px;"
+                        x-model="formDevice.device_id" placeholder="e.g. PT-03" :disabled="!!formDevice.pk">
+                </div>
+                <div>
+                    <label class="form-label">Name</label>
+                    <input type="text" class="sys-config-input" style="width:100%;height:36px;"
+                        x-model="formDevice.name" placeholder="e.g. Pressure Sensor #3">
+                </div>
+                <div>
+                    <label class="form-label">Category</label>
+                    <select class="sys-config-select" style="height:36px;" x-model="formDevice.category">
+                        <template x-for="[val, label] in categories" :key="val">
+                            <option :value="val" x-text="label"></option>
+                        </template>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Group</label>
+                    <select class="sys-config-select" style="height:36px;" x-model="formDevice.group_id">
+                        <option value="">— None —</option>
+                        <template x-for="g in groupList" :key="g.id">
+                            <option :value="g.id" x-text="g.name"></option>
+                        </template>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Unit</label>
+                    <input type="text" class="sys-config-input" style="width:100%;height:36px;"
+                        x-model="formDevice.unit" placeholder="e.g. bar, °C, L/h">
+                </div>
+                <div>
+                    <label class="form-label">Display Order</label>
+                    <input type="number" class="sys-config-input" style="width:100%;height:36px;"
+                        x-model.number="formDevice.display_order" min="0">
+                </div>
+                <div>
+                    <label class="form-label">Min Value</label>
+                    <input type="number" class="sys-config-input" style="width:100%;height:36px;"
+                        x-model="formDevice.min_value" placeholder="optional" step="any">
+                </div>
+                <div>
+                    <label class="form-label">Max Value</label>
+                    <input type="number" class="sys-config-input" style="width:100%;height:36px;"
+                        x-model="formDevice.max_value" placeholder="optional" step="any">
+                </div>
+            </div>
+
+            <div x-show="formError" style="color:var(--bench-danger);font-size:12px;margin-bottom:10px;font-weight:600;" x-text="formError"></div>
+
+            <div class="sys-confirm-actions">
+                <button class="sys-action-btn" @click="formOpen = false" style="padding:0 20px;height:38px;">
+                    Cancel
+                </button>
+                <button class="sys-action-btn sys-action-btn--save" @click="saveDevice()" style="padding:0 20px;height:38px;">
+                    <svg class="sys-ico"><use href="#ico-save"/></svg>
+                    <span x-text="formDevice.pk ? 'Update Device' : 'Create Device'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% csrf_token %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function deviceConfig() {
+    return {
+        groupList: {{ groups_json|safe }},
+        deviceList: {{ devices_json|safe }},
+        categories: {{ categories_json|safe }},
+        _tmpCounter: 0,
+
+        formOpen: false,
+        formError: '',
+        formDevice: {},
+
+        init() {},
+
+        catLabel(cat) {
+            const match = this.categories.find(c => c[0] === cat);
+            return match ? match[1] : cat;
+        },
+        groupName(gid) {
+            if (!gid) return '—';
+            const g = this.groupList.find(g => g.id === gid);
+            return g ? g.name : '—';
+        },
+        groupColor(gid) {
+            if (!gid) return '';
+            const g = this.groupList.find(g => g.id === gid);
+            return g ? g.color : '';
+        },
+        csrfToken() {
+            return document.querySelector('[name=csrfmiddlewaretoken]').value;
+        },
+
+        openDeviceForm(dev) {
+            this.formError = '';
+            if (dev) {
+                this.formDevice = { ...dev, group_id: dev.group_id || '' };
+            } else {
+                this.formDevice = {
+                    pk: null, device_id: '', name: '', category: 'valve',
+                    group_id: '', unit: '', min_value: '', max_value: '', display_order: 0,
+                };
+            }
+            this.formOpen = true;
+        },
+
+        async saveDevice() {
+            this.formError = '';
+            const payload = { ...this.formDevice };
+            if (payload.group_id === '') payload.group_id = null;
+            if (payload.min_value === '') payload.min_value = null;
+            if (payload.max_value === '') payload.max_value = null;
+
+            const resp = await fetch('{% url "controller:device_save" %}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrfToken() },
+                body: JSON.stringify(payload),
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                this.formOpen = false;
+                window.location.reload();
+            } else {
+                this.formError = data.error || 'Save failed';
+            }
+        },
+
+        async deleteDevice(dev) {
+            if (!confirm(`Delete device "${dev.device_id} — ${dev.name}"?`)) return;
+            const resp = await fetch('/system/config/device/' + dev.pk + '/delete/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrfToken() },
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                this.deviceList = this.deviceList.filter(d => d.pk !== dev.pk);
+            }
+        },
+
+        async toggleActive(dev) {
+            const resp = await fetch('/system/config/device/' + dev.pk + '/toggle/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrfToken() },
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                dev.is_active = data.is_active;
+            }
+        },
+
+        newGroup() {
+            this._tmpCounter++;
+            this.groupList.push({
+                id: null, _tmpId: 'new_' + this._tmpCounter,
+                name: '', color: '#4CAF50', description: '', display_order: 99,
+            });
+        },
+
+        async saveGroup(group) {
+            if (!group.name.trim()) return;
+            const resp = await fetch('{% url "controller:group_save" %}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrfToken() },
+                body: JSON.stringify(group),
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                group.id = data.group.id;
+                window.location.reload();
+            }
+        },
+
+        async deleteGroup(group) {
+            if (!group.id) {
+                this.groupList = this.groupList.filter(g => g !== group);
+                return;
+            }
+            if (!confirm('Delete group "' + group.name + '"? Devices will become ungrouped.')) return;
+            const resp = await fetch('/system/config/group/' + group.id + '/delete/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrfToken() },
+            });
+            const data = await resp.json();
+            if (data.ok) window.location.reload();
+        },
+    };
+}
+</script>
+{% endblock %}

@@ -1,0 +1,204 @@
+{% extends "base_bench.html" %}
+
+{% block title %}Settings — IIITB Test Bench{% endblock %}
+{% block tab_settings %}active{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+<div x-data="{ activeTab: 'users' }" style="height:100%;display:flex;flex-direction:column;gap:4px;">
+
+    <!-- Sub-tab bar -->
+    <div style="display:flex;gap:4px;flex-shrink:0;">
+        <button class="btn-hmi btn-hmi-sm"
+                :class="activeTab === 'users' ? 'btn-hmi-primary' : 'btn-hmi-ghost'"
+                @click="activeTab = 'users'; $nextTick(() => lucide.createIcons())"
+                style="flex:1;min-height:34px;font-size:13px;">
+            <i data-lucide="users" style="width:14px;height:14px;"></i>
+            User Management
+        </button>
+        <button class="btn-hmi btn-hmi-sm"
+                :class="activeTab === 'general' ? 'btn-hmi-primary' : 'btn-hmi-ghost'"
+                @click="activeTab = 'general'; $nextTick(() => lucide.createIcons())"
+                style="flex:1;min-height:34px;font-size:13px;">
+            <i data-lucide="sliders-horizontal" style="width:14px;height:14px;"></i>
+            General Settings
+        </button>
+    </div>
+
+    <!-- TAB 1: USER MANAGEMENT -->
+    <div x-show="activeTab === 'users'" x-cloak style="flex:1;overflow:hidden;">
+        <div class="hmi-card" style="height:100%;display:flex;flex-direction:column;padding:8px 10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-shrink:0;">
+                <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:700;">
+                    {% if is_admin %}Users{% else %}Users (read-only){% endif %}
+                </span>
+                {% if is_admin %}
+                <a href="{% url 'accounts:user_create' %}" class="btn-hmi btn-hmi-primary btn-hmi-sm"
+                   style="padding:3px 10px;min-height:26px;font-size:11px;">
+                    <i data-lucide="user-plus" style="width:12px;height:12px;"></i> Add User
+                </a>
+                {% endif %}
+            </div>
+            <div style="overflow-y:auto;flex:1;">
+                <table class="hmi-table">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Name</th>
+                            <th>Role</th>
+                            <th>Status</th>
+                            {% if is_admin %}<th>Actions</th>{% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in users %}
+                        <tr>
+                            <td style="font-weight:500;">{{ u.username }}</td>
+                            <td>{{ u.full_name|default:"—" }}</td>
+                            <td><span class="hmi-badge hmi-badge--running">{{ u.get_role_display }}</span></td>
+                            <td>
+                                {% if u.is_active %}
+                                <span class="hmi-badge hmi-badge--completed">Active</span>
+                                {% else %}
+                                <span class="hmi-badge hmi-badge--aborted">Inactive</span>
+                                {% endif %}
+                            </td>
+                            {% if is_admin %}
+                            <td style="white-space:nowrap;">
+                                <a href="{% url 'accounts:user_edit' u.pk %}"
+                                   class="btn-hmi btn-hmi-ghost btn-hmi-sm"
+                                   style="padding:2px 8px;min-height:24px;font-size:11px;">Edit</a>
+                                {% if u != request.user %}
+                                <form method="post" action="{% url 'accounts:user_toggle_active' u.pk %}" style="display:inline;">
+                                    {% csrf_token %}
+                                    <button type="submit"
+                                            class="btn-hmi btn-hmi-sm {% if u.is_active %}btn-hmi-warning{% else %}btn-hmi-success{% endif %}"
+                                            style="padding:2px 8px;min-height:24px;font-size:11px;">
+                                        {{ u.is_active|yesno:'Deactivate,Activate' }}
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="{% if is_admin %}5{% else %}4{% endif %}"
+                                style="text-align:center;padding:16px;color:var(--bench-text-muted);">No users found.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 2: GENERAL SETTINGS -->
+    <div x-show="activeTab === 'general'" x-cloak style="flex:1;">
+        <form method="post" action="{% url 'bench_ui:settings_general_save' %}">
+            {% csrf_token %}
+            <input type="hidden" name="display_brightness" value="{{ bench_settings.display_brightness }}">
+
+            <!-- 3-column grid — content-sized, not stretched -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;">
+
+                <!-- Col 1: Appearance -->
+                <div class="hmi-card" style="padding:8px 10px;">
+                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:700;margin-bottom:8px;">Appearance</div>
+
+                    <div style="margin-bottom:8px;">
+                        <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--bench-text-dim);font-weight:600;margin-bottom:2px;">Theme</div>
+                        <select name="theme" class="hmi-select" {% if not is_admin %}disabled{% endif %}
+                                style="padding:5px 8px;font-size:12px;">
+                            <option value="dark" {% if bench_settings.theme == 'dark' %}selected{% endif %}>Dark (Default)</option>
+                            <option value="light" {% if bench_settings.theme == 'light' %}selected{% endif %}>Light</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--bench-text-dim);font-weight:600;margin-bottom:2px;">Date/Time Format</div>
+                        <select name="datetime_format" class="hmi-select"
+                                {% if not is_admin %}disabled{% endif %}
+                                style="padding:5px 8px;font-size:12px;">
+                            <option value="24h" {% if bench_settings.datetime_format == '24h' %}selected{% endif %}>24-hour (14:30:00)</option>
+                            <option value="12h" {% if bench_settings.datetime_format == '12h' %}selected{% endif %}>12-hour (2:30 PM)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Col 2: Security -->
+                <div class="hmi-card" style="padding:8px 10px;">
+                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:700;margin-bottom:8px;">Security & Alerts</div>
+
+                    <div style="margin-bottom:8px;">
+                        <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--bench-text-dim);font-weight:600;margin-bottom:2px;">Auto-Lock Timeout</div>
+                        <select name="auto_lock_timeout" class="hmi-select"
+                                {% if not is_admin %}disabled{% endif %}
+                                style="padding:5px 8px;font-size:12px;">
+                            <option value="0" {% if bench_settings.auto_lock_timeout == 0 %}selected{% endif %}>Disabled</option>
+                            <option value="60" {% if bench_settings.auto_lock_timeout == 60 %}selected{% endif %}>1 minute</option>
+                            <option value="180" {% if bench_settings.auto_lock_timeout == 180 %}selected{% endif %}>3 minutes</option>
+                            <option value="300" {% if bench_settings.auto_lock_timeout == 300 %}selected{% endif %}>5 min (default)</option>
+                            <option value="600" {% if bench_settings.auto_lock_timeout == 600 %}selected{% endif %}>10 minutes</option>
+                            <option value="900" {% if bench_settings.auto_lock_timeout == 900 %}selected{% endif %}>15 minutes</option>
+                        </select>
+                    </div>
+
+                    <div style="margin-bottom:8px;">
+                        <label style="display:flex;align-items:center;gap:6px;color:var(--bench-text);font-size:12px;cursor:pointer;">
+                            <input type="checkbox" name="buzzer_enabled"
+                                   {% if bench_settings.buzzer_enabled %}checked{% endif %}
+                                   {% if not is_admin %}disabled{% endif %}
+                                   style="width:16px;height:16px;accent-color:var(--bench-accent);">
+                            Buzzer / Alert Sounds
+                        </label>
+                    </div>
+
+                    <div>
+                        <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--bench-text-dim);font-weight:600;margin-bottom:2px;">Bench ID</div>
+                        <input type="text" name="bench_id" value="{{ bench_settings.bench_id }}"
+                               class="hmi-input" {% if not is_admin %}disabled{% endif %}
+                               style="padding:5px 8px;font-size:12px;">
+                    </div>
+                </div>
+
+                <!-- Col 3: System Info + Save -->
+                <div class="hmi-card" style="padding:8px 10px;">
+                    <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--bench-text-muted);font-weight:700;margin-bottom:8px;">System Info</div>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:8px;">
+                        <div>
+                            <div style="font-size:8px;color:var(--bench-text-dim);">Version</div>
+                            <div class="mono" style="font-size:12px;color:var(--bench-text);">{{ bench_settings.software_version }}</div>
+                        </div>
+                        <div>
+                            <div style="font-size:8px;color:var(--bench-text-dim);">Bench</div>
+                            <div class="mono" style="font-size:11px;color:var(--bench-text);">{{ bench_settings.bench_id }}</div>
+                        </div>
+                        <div>
+                            <div style="font-size:8px;color:var(--bench-text-dim);">Django</div>
+                            <div class="mono" style="font-size:12px;color:var(--bench-text);">{{ django_version|default:"--" }}</div>
+                        </div>
+                        <div>
+                            <div style="font-size:8px;color:var(--bench-text-dim);">Python</div>
+                            <div class="mono" style="font-size:12px;color:var(--bench-text);">{{ python_version|default:"--" }}</div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+
+            {% if is_admin %}
+            <div style="display:flex;justify-content:center;margin-top:6px;">
+                <button type="submit" class="btn-hmi btn-hmi-primary"
+                        style="min-height:32px;font-size:12px;padding:4px 32px;">
+                    <i data-lucide="save" style="width:14px;height:14px;"></i> Save Settings
+                </button>
+            </div>
+            {% endif %}
+        </form>
+    </div>
+
+</div>
+{% endblock %}

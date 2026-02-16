@@ -1,0 +1,206 @@
+{% extends base_template %}
+
+{% block title %}Test #{{ test.pk }}{% endblock %}
+{% block tab_history %}active{% endblock %}
+{% block nav_tests %}active{% endblock %}
+{% block page_title %}Test #{{ test.pk }}{% endblock %}
+{% block page_actions %}
+{% if test.status == 'completed' and test.approval_status == 'pending' %}
+<a href="{% url 'testing:test_approve' test.pk %}" class="{% if is_bench %}btn-hmi btn-hmi-warning btn-hmi-sm{% else %}btn-lab btn-lab-warning btn-lab-sm{% endif %}">Review & Approve</a>
+{% endif %}
+<a href="{% url 'testing:test_list' %}" class="{% if is_bench %}btn-hmi btn-hmi-ghost btn-hmi-sm{% else %}btn-lab btn-lab-secondary btn-lab-sm{% endif %}">Back</a>
+{% endblock %}
+
+{% block content %}
+{% if is_bench %}
+<!-- BENCH: Compact HMI layout -->
+<div class="bench-grid" style="grid-template-columns:280px 1fr;">
+    <!-- Test Info -->
+    <div class="hmi-card">
+        <div class="hmi-card-title">Test Info</div>
+        <div style="margin-bottom:8px;">
+            <span class="hmi-badge hmi-badge--{{ test.status }}">{{ test.get_status_display }}</span>
+            {% if test.overall_pass == True %}<span class="hmi-badge hmi-badge--pass">PASS</span>
+            {% elif test.overall_pass == False %}<span class="hmi-badge hmi-badge--fail">FAIL</span>{% endif %}
+        </div>
+        <table class="hmi-table" style="margin:0;">
+            <tbody>
+                <tr><td style="color:var(--bench-text-muted);font-size:11px;">Meter</td><td><a href="{% url 'meters:meter_detail' test.meter.pk %}">{{ test.meter.serial_number }}</a></td></tr>
+                <tr><td style="color:var(--bench-text-muted);font-size:11px;">Size</td><td>{{ test.meter.meter_size }}</td></tr>
+                <tr><td style="color:var(--bench-text-muted);font-size:11px;">Test Class</td><td>{{ test.get_test_class_display }}</td></tr>
+                <tr><td style="color:var(--bench-text-muted);font-size:11px;">Source</td><td>{{ test.get_source_display }}</td></tr>
+                <tr><td style="color:var(--bench-text-muted);font-size:11px;">Created</td><td class="mono" style="font-size:11px;">{{ test.created_at|date:"d M H:i" }}</td></tr>
+                <tr><td style="color:var(--bench-text-muted);font-size:11px;">Started</td><td class="mono" style="font-size:11px;">{{ test.started_at|date:"d M H:i"|default:"—" }}</td></tr>
+                <tr><td style="color:var(--bench-text-muted);font-size:11px;">Completed</td><td class="mono" style="font-size:11px;">{{ test.completed_at|date:"d M H:i"|default:"—" }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <!-- Q-Point Results -->
+    <div class="hmi-card">
+        <div class="hmi-card-title">Q-Point Results ({{ test.passed_count }}/{{ test.total_points }})</div>
+        <table class="qpoint-table">
+            <thead>
+                <tr>
+                    <th>Q</th><th>Target</th><th>Ref Vol</th><th>DUT Vol</th>
+                    <th>Error%</th><th>MPE%</th><th>Zone</th><th>Result</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in results %}
+                <tr class="{% if r.passed == True %}qpoint-row--pass{% elif r.passed == False %}qpoint-row--fail{% else %}qpoint-row--pending{% endif %}">
+                    <td style="font-weight:600;">{{ r.q_point }}</td>
+                    <td>{{ r.target_flow_lph }}</td>
+                    <td>{{ r.ref_volume_l|default:"—" }}</td>
+                    <td>{{ r.dut_volume_l|default:"—" }}</td>
+                    <td>{% if r.error_pct != None %}<span class="{% if r.passed %}text-hmi-success{% else %}text-hmi-danger{% endif %}">{{ r.error_pct }}%</span>{% else %}—{% endif %}</td>
+                    <td>&plusmn;{{ r.mpe_pct }}%</td>
+                    <td>{{ r.zone }}</td>
+                    <td>
+                        {% if r.passed == True %}<span class="hmi-badge hmi-badge--pass">PASS</span>
+                        {% elif r.passed == False %}<span class="hmi-badge hmi-badge--fail">FAIL</span>
+                        {% else %}<span class="hmi-badge hmi-badge--pending">—</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<!-- LAB: Full-width card layout -->
+<div class="lab-grid-1-2">
+    <div class="lab-card">
+        <div class="lab-card-header">
+            <span class="lab-card-title">Test Information</span>
+        </div>
+        <div class="lab-flex-gap lab-mb-md">
+            <span class="lab-badge lab-badge--dot lab-badge--{{ test.status }}">{{ test.get_status_display }}</span>
+            {% if test.overall_pass == True %}<span class="lab-badge lab-badge--pass">PASS</span>
+            {% elif test.overall_pass == False %}<span class="lab-badge lab-badge--fail">FAIL</span>{% endif %}
+        </div>
+        <table class="lab-table">
+            <tbody>
+                <tr><td class="settings-key">Meter</td><td><a href="{% url 'meters:meter_detail' test.meter.pk %}">{{ test.meter.serial_number }}</a></td></tr>
+                <tr><td class="settings-key">Size</td><td>{{ test.meter.meter_size }}</td></tr>
+                <tr><td class="settings-key">Test Class</td><td>{{ test.get_test_class_display }}</td></tr>
+                <tr><td class="settings-key">Source</td><td>{{ test.get_source_display }}</td></tr>
+                <tr><td class="settings-key">Initiated By</td><td>{% if test.initiated_by %}{{ test.initiated_by.get_full_name|default:test.initiated_by.username }}{% else %}—{% endif %}</td></tr>
+                <tr><td class="settings-key">Created</td><td>{{ test.created_at|date:"d M Y H:i" }}</td></tr>
+                <tr><td class="settings-key">Started</td><td>{{ test.started_at|date:"d M Y H:i"|default:"—" }}</td></tr>
+                <tr><td class="settings-key">Completed</td><td>{{ test.completed_at|date:"d M Y H:i"|default:"—" }}</td></tr>
+                <tr><td class="settings-key">Approval</td><td>{{ test.get_approval_status_display }}</td></tr>
+                {% if test.certificate_number %}
+                <tr><td class="settings-key">Certificate</td><td class="col-bold">{{ test.certificate_number }}{% if test.certificate_pdf %} <a href="{% url 'testing:download_certificate' test.pk %}" class="btn-lab btn-lab-sm btn-lab-primary" style="margin-left:8px;"><i data-lucide="download" style="width:14px;height:14px;"></i> PDF</a>{% endif %}</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="lab-card">
+        <div class="lab-card-header">
+            <span class="lab-card-title">Q-Point Results ({{ test.passed_count }}/{{ test.total_points }} passed)</span>
+        </div>
+        <div class="lab-overflow-x">
+            <table class="lab-table">
+                <thead>
+                    <tr>
+                        <th>Q-Point</th><th>Target (L/h)</th><th>Ref Vol (L)</th><th>DUT Vol (L)</th>
+                        <th>Error %</th><th>MPE %</th><th>Zone</th><th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in results %}
+                    <tr>
+                        <td class="col-bold">{{ r.q_point }}</td>
+                        <td>{{ r.target_flow_lph }}</td>
+                        <td>{{ r.ref_volume_l|default:"—" }}</td>
+                        <td>{{ r.dut_volume_l|default:"—" }}</td>
+                        <td>
+                            {% if r.error_pct != None %}
+                            <span class="{% if r.passed %}lab-error-pass{% else %}lab-error-fail{% endif %}">{{ r.error_pct }}%</span>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td>&plusmn;{{ r.mpe_pct }}%</td>
+                        <td>{{ r.zone }}</td>
+                        <td>
+                            {% if r.passed == True %}<span class="lab-badge lab-badge--pass">PASS</span>
+                            {% elif r.passed == False %}<span class="lab-badge lab-badge--fail">FAIL</span>
+                            {% else %}<span class="lab-badge lab-badge--aborted">PENDING</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Error Curve Chart -->
+{% if results %}
+<div class="lab-card lab-mt-md">
+    <div class="lab-card-header">
+        <span class="lab-card-title">Error Curve</span>
+    </div>
+    <div class="lab-chart-container">
+        <canvas id="errorCurveChart"></canvas>
+    </div>
+</div>
+{% endif %}
+
+<!-- Approval Section -->
+{% if test.status == 'completed' and test.approval_status == 'pending' %}
+{% if user.role == 'admin' or user.role == 'manager' %}
+<div class="lab-card lab-card--accent-warning lab-mt-md">
+    <div class="lab-card-header">
+        <span class="lab-card-title">Review & Approval</span>
+    </div>
+    <form method="post" action="{% url 'testing:test_approve' test.pk %}">
+        {% csrf_token %}
+        <div class="lab-mb-md">
+            <label class="form-label">Comment (optional)</label>
+            <textarea name="comment" class="form-control" rows="2" placeholder="Add a comment..."></textarea>
+        </div>
+        <div class="lab-approval-actions">
+            <button type="submit" name="action" value="approve" class="btn btn-success">
+                <i data-lucide="check"></i> Approve
+            </button>
+            <button type="submit" name="action" value="reject" class="btn btn-danger">
+                <i data-lucide="x"></i> Reject
+            </button>
+        </div>
+    </form>
+</div>
+{% endif %}
+{% endif %}
+
+{% if test.notes %}
+<div class="lab-card lab-mt-md">
+    <div class="lab-card-header"><span class="lab-card-title">Notes</span></div>
+    <p>{{ test.notes }}</p>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if not is_bench and results %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% load static %}
+<script src="{% static 'js/error_curve.js' %}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var qPointData = [
+            {% for r in results %}
+            { q_point: {{ r.q_point }}, flow_rate: {{ r.target_flow_lph }}, error_pct: {% if r.error_pct != None %}{{ r.error_pct }}{% else %}null{% endif %}, mpe_pct: {{ r.mpe_pct }}, passed: {% if r.passed %}true{% elif r.passed == False %}false{% else %}null{% endif %} },
+            {% endfor %}
+        ];
+        var mpeData = [
+            {% for r in results %}
+            { flow_rate: {{ r.target_flow_lph }}, mpe: {{ r.mpe_pct }} },
+            {% endfor %}
+        ];
+        renderErrorCurve('errorCurveChart', qPointData, mpeData);
+    });
+</script>
+{% endif %}
+{% endblock %}

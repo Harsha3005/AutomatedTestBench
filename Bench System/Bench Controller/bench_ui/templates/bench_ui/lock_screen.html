@@ -1,0 +1,73 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1024, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Locked — I.R.A.S Test Bench</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
+    <link rel="stylesheet" href="{% static 'css/bench_hmi.css' %}">
+</head>
+<body class="bench-hmi" style="display:flex;align-items:center;justify-content:center;width:1024px;height:600px;">
+
+    <div style="text-align:center;width:360px;">
+        <!-- Lock icon -->
+        <div style="margin-bottom:24px;">
+            <div style="width:80px;height:80px;border-radius:50%;background:var(--bench-accent-dim);display:inline-flex;align-items:center;justify-content:center;">
+                <i data-lucide="lock" style="width:36px;height:36px;color:var(--bench-accent);"></i>
+            </div>
+        </div>
+
+        <!-- User info -->
+        <h1 style="font-size:20px;font-weight:700;color:var(--bench-text);margin:0 0 4px;">
+            Bench Locked
+        </h1>
+        <p style="font-size:13px;color:var(--bench-text-muted);margin:0 0 24px;">
+            <i data-lucide="user" style="width:13px;height:13px;vertical-align:-2px;"></i>
+            {{ user.get_full_name|default:user.username }}
+        </p>
+
+        {% if messages %}
+        {% for message in messages %}
+        <div class="bench-login-error" style="margin-bottom:16px;">{{ message }}</div>
+        {% endfor %}
+        {% endif %}
+
+        <!-- Unlock form -->
+        <form method="post" action="{% url 'bench_ui:unlock' %}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'bench_ui:dashboard' %}">
+
+            <div style="margin-bottom:16px;">
+                <input type="password" name="password" class="hmi-input"
+                       placeholder="Enter password to unlock"
+                       autofocus autocomplete="current-password"
+                       style="text-align:center;font-size:18px;">
+            </div>
+
+            <button type="submit" class="btn-hmi btn-hmi-primary" style="width:100%;font-size:16px;">
+                <i data-lucide="unlock" style="width:18px;height:18px;"></i>
+                Unlock
+            </button>
+        </form>
+
+        <!-- Logout option -->
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--bench-card-border);">
+            <a href="{% url 'accounts:logout' %}" style="font-size:12px;color:var(--bench-text-dim);text-decoration:none;">
+                <i data-lucide="log-out" style="width:12px;height:12px;vertical-align:-2px;"></i>
+                Sign out &amp; switch user
+            </a>
+        </div>
+
+        <!-- Branding -->
+        <p style="margin-top:24px;font-size:10px;color:var(--bench-text-dim);">
+            I.R.A.S Test Bench &mdash; A Product by A.C.M.I.S Technologies LLP
+        </p>
+    </div>
+
+    <script>lucide.createIcons();</script>
+</body>
+</html>
