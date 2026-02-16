@@ -1,11 +1,17 @@
 /**
- * B4/L1 — LinkMaster LoRa Firmware
+ * L1 — LinkMaster LoRa Firmware (Lab Side)
  *
- * USB Serial ↔ LoRa SX1262 transparent bridge.
+ * RS485 ↔ LoRa SX1262 bridge.
+ * Receives JSON commands from L2 RS485 Bridge, transmits via LoRa.
+ * Receives LoRa packets, forwards as JSON events via RS485 to L2.
  * Acts as a dumb radio pipe — all ASP encryption/decryption
- * is handled on the RPi5/Lab PC side.
+ * is handled on the Lab Server side.
  *
- * Protocol (USB Serial, 115200, JSON lines):
+ * Data flow:
+ *   Lab Server --USB--> L2 --RS485--> L1 --LoRa RF--> B4 (Bench)
+ *   Lab Server <-USB--- L2 <-RS485--- L1 <-LoRa RF--- B4 (Bench)
+ *
+ * Protocol (RS485, 115200, JSON lines):
  *   TX: {"cmd":"LORA_SEND","data":"<base64>"}\n
  *       → {"ok":true}\n
  *
@@ -16,6 +22,8 @@
  *       → {"ok":true,"data":{"uptime_ms":...,"freq_hz":865000000,"sf":10}}\n
  *
  * LoRa: SX1262 (RA-01SH), 865 MHz, SF10, BW 125kHz, CR 4/5, +22 dBm
+ *
+ * Copyright (c) 2026 A.C.M.I.S Technologies LLP. All rights reserved.
  */
 
 #include <Arduino.h>
@@ -23,6 +31,9 @@
 #include <SPI.h>
 #include <Ra01S.h>
 #include "config.h"
+
+// --- RS485 on UART2 ---
+HardwareSerial RS485(2);
 
 // --- Base64 lookup tables ---
 static const char b64_chars[] =
@@ -89,17 +100,45 @@ uint8_t rxBuf[RX_BUF_SIZE];
 unsigned long txCount = 0;
 unsigned long rxCount = 0;
 
-// --- JSON responses ---
+// --- RS485 TX helper (handles DE pin) ---
+void rs485Print(const char *str) {
+    digitalWrite(RS485_DE_PIN, HIGH);
+    delayMicroseconds(50);
+    RS485.print(str);
+    RS485.flush();
+    delayMicroseconds(50);
+    digitalWrite(RS485_DE_PIN, LOW);
+}
+
+void rs485Println(const char *str) {
+    digitalWrite(RS485_DE_PIN, HIGH);
+    delayMicroseconds(50);
+    RS485.println(str);
+    RS485.flush();
+    delayMicroseconds(50);
+    digitalWrite(RS485_DE_PIN, LOW);
+}
+
+void rs485SendJson(JsonDocument &doc) {
+    digitalWrite(RS485_DE_PIN, HIGH);
+    delayMicroseconds(50);
+    serializeJson(doc, RS485);
+    RS485.println();
+    RS485.flush();
+    delayMicroseconds(50);
+    digitalWrite(RS485_DE_PIN, LOW);
+}
+
+// --- JSON responses (sent over RS485) ---
 void sendOk() {
-    Serial.println("{\"ok\":true}");
+    rs485Println("{\"ok\":true}");
 }
 
 void sendError(const char *msg) {
     JsonDocument doc;
     doc["ok"] = false;
     doc["error"] = msg;
-    serializeJson(doc, Serial);
-    Serial.println();
+    rs485SendJson(doc);
 }
 
 // --- Command handlers ---
@@ -145,8 +184,7 @@ void handleStatus() {
     data["tx_power"] = LORA_TX_POWER;
     data["tx_count"] = txCount;
     data["rx_count"] = rxCount;
-    serializeJson(doc, Serial);
-    Serial.println();
+    rs485SendJson(doc);
 }
 
 // --- Process command ---
@@ -171,8 +209,13 @@ void processCommand(const String &line) {
 
 // --- Setup ---
 void setup() {
+    // USB Serial for debug output only
     Serial.begin(USB_BAUD);
-    while (!Serial) { delay(10); }
+
+    // RS485 to L2 Bridge — this is the command interface
+    pinMode(RS485_DE_PIN, OUTPUT);
+    digitalWrite(RS485_DE_PIN, LOW);  // Start in receive mode
+    RS485.begin(RS485_BAUD, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
 
     SPI.begin();
 
@@ -182,8 +225,8 @@ void setup() {
         doc["ok"] = false;
         doc["error"] = "lora_init_failed";
         doc["code"] = ret;
-        serializeJson(doc, Serial);
-        Serial.println();
+        rs485SendJson(doc);
+        Serial.println("[ERROR] LoRa init failed!");
         while (1) { delay(1000); }  // Halt on init failure
     }
 
@@ -201,14 +244,16 @@ void setup() {
 
     inputBuffer.reserve(512);
 
-    Serial.println("{\"ok\":true,\"data\":{\"fw\":\"LinkMaster-LoRa\",\"ver\":\"1.0.0\",\"freq\":865}}");
+    // Boot message over RS485 to Lab Server
+    rs485Println("{\"ok\":true,\"data\":{\"fw\":\"L1-LinkMaster-LoRa\",\"ver\":\"1.0.0\",\"freq\":865}}");
+    Serial.println("[INIT] L1 LinkMaster LoRa ready (RS485 + LoRa 865MHz SF10)");
 }
 
 // --- Main loop ---
 void loop() {
-    // Check USB Serial for commands
-    while (Serial.available()) {
-        char c = Serial.read();
+    // Check RS485 for commands from L2 Bridge / Lab Server
+    while (RS485.available()) {
+        char c = RS485.read();
         if (c == '\n') {
             inputBuffer.trim();
             if (inputBuffer.length() > 0) {
@@ -239,7 +284,6 @@ void loop() {
         doc["rssi"] = rssi;
         doc["snr"] = snr;
         doc["len"] = len;
-        serializeJson(doc, Serial);
-        Serial.println();
+        rs485SendJson(doc);
     }
 }

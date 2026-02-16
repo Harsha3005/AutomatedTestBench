@@ -1,211 +1,92 @@
 /**
- * L2 — Lab RS485 Bridge Firmware
+ * L2 — Lab RS485 Transparent Bridge Firmware
  *
- * USB Serial ↔ RS485 Modbus RTU generic transparent bridge.
- * Any Modbus address can be targeted per-command.
+ * USB Serial ↔ RS485 transparent byte-level bridge.
+ * Sits between Lab Server (USB) and L1 LinkMaster (RS485).
+ * No protocol awareness — just forwards bytes in both directions.
  *
- * Protocol (USB Serial, 115200, JSON lines):
- *   Request:  {"cmd":"MB_READ","addr":1,"reg":0,"count":2}\n
- *   Response: {"ok":true,"data":{"values":[100,200]}}\n
+ * Data flow:
+ *   Lab Server --USB--> L2 --RS485--> L1 LinkMaster --LoRa--> Bench
+ *   Lab Server <-USB--- L2 <-RS485--- L1 LinkMaster <-LoRa--- Bench
  *
- *   Request:  {"cmd":"MB_WRITE","addr":1,"reg":0,"value":100}\n
- *   Response: {"ok":true}\n
+ * RS485 half-duplex: DE pin HIGH during TX, LOW during RX.
  *
- *   Request:  {"cmd":"SET_BAUD","baud":19200}\n
- *   Response: {"ok":true}\n
- *
- *   Request:  {"cmd":"STATUS"}\n
- *   Response: {"ok":true,"data":{"uptime_ms":...,"baud":9600}}\n
+ * Copyright (c) 2026 A.C.M.I.S Technologies LLP. All rights reserved.
  */
 
 #include <Arduino.h>
-#include <ArduinoJson.h>
-#include <ModbusMaster.h>
 #include "config.h"
 
-// --- Globals ---
-ModbusMaster node;
+// --- RS485 on UART2 ---
 HardwareSerial RS485(2);
-String inputBuffer;
-uint8_t lastModbusError = 0;
-uint32_t currentBaud = RS485_BAUD_DEFAULT;
 
-// --- RS485 direction control ---
-void preTransmission() {
-    digitalWrite(RS485_DE_PIN, HIGH);
-    delayMicroseconds(50);
-}
+// --- Buffers for bulk transfer ---
+uint8_t usbBuf[BUF_SIZE];
+uint8_t rs485Buf[BUF_SIZE];
 
-void postTransmission() {
-    delayMicroseconds(50);
-    digitalWrite(RS485_DE_PIN, LOW);
-}
-
-// --- JSON responses ---
-void sendOk() {
-    Serial.println("{\"ok\":true}");
-}
-
-void sendOk(JsonDocument &data) {
-    JsonDocument doc;
-    doc["ok"] = true;
-    doc["data"] = data;
-    serializeJson(doc, Serial);
-    Serial.println();
-}
-
-void sendError(const char *msg) {
-    JsonDocument doc;
-    doc["ok"] = false;
-    doc["error"] = msg;
-    serializeJson(doc, Serial);
-    Serial.println();
-}
-
-void sendModbusError(uint8_t result) {
-    JsonDocument doc;
-    doc["ok"] = false;
-    doc["error"] = "modbus_error";
-    doc["code"] = result;
-    serializeJson(doc, Serial);
-    Serial.println();
-}
-
-// --- Command handlers ---
-
-void handleMbRead(JsonDocument &cmd) {
-    uint8_t addr = cmd["addr"] | 1;
-    uint16_t reg = cmd["reg"] | 0;
-    uint16_t count = cmd["count"] | 1;
-
-    if (count == 0 || count > 125) {
-        sendError("count must be 1-125");
-        return;
-    }
-
-    node.begin(addr, RS485);
-    uint8_t result = node.readHoldingRegisters(reg, count);
-    lastModbusError = result;
-
-    if (result == node.ku8MBSuccess) {
-        JsonDocument data;
-        JsonArray values = data["values"].to<JsonArray>();
-        for (uint16_t i = 0; i < count; i++) {
-            values.add(node.getResponseBuffer(i));
-        }
-        sendOk(data);
-    } else {
-        sendModbusError(result);
-    }
-}
-
-void handleMbWrite(JsonDocument &cmd) {
-    uint8_t addr = cmd["addr"] | 1;
-    uint16_t reg = cmd["reg"] | 0;
-    uint16_t value = cmd["value"] | 0;
-
-    node.begin(addr, RS485);
-    uint8_t result = node.writeSingleRegister(reg, value);
-    lastModbusError = result;
-
-    if (result == node.ku8MBSuccess) {
-        sendOk();
-    } else {
-        sendModbusError(result);
-    }
-}
-
-void handleSetBaud(JsonDocument &cmd) {
-    uint32_t baud = cmd["baud"] | 0;
-    if (baud < 1200 || baud > 115200) {
-        sendError("baud must be 1200-115200");
-        return;
-    }
-    RS485.end();
-    RS485.begin(baud, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
-    currentBaud = baud;
-    sendOk();
-}
-
-void handleStatus() {
-    JsonDocument data;
-    data["uptime_ms"] = millis();
-    data["rs485_ok"] = (lastModbusError == 0);
-    data["last_err"] = lastModbusError;
-    data["baud"] = currentBaud;
-    sendOk(data);
-}
-
-// --- Process command ---
-void processCommand(const String &line) {
-    JsonDocument cmd;
-    DeserializationError err = deserializeJson(cmd, line);
-    if (err) {
-        sendError("json_parse_error");
-        return;
-    }
-
-    const char *cmdStr = cmd["cmd"] | "";
-
-    if (strcmp(cmdStr, "MB_READ") == 0) {
-        handleMbRead(cmd);
-    } else if (strcmp(cmdStr, "MB_WRITE") == 0) {
-        handleMbWrite(cmd);
-    } else if (strcmp(cmdStr, "SET_BAUD") == 0) {
-        handleSetBaud(cmd);
-    } else if (strcmp(cmdStr, "STATUS") == 0) {
-        handleStatus();
-    } else {
-        sendError("unknown_command");
-    }
-}
+// --- Statistics ---
+unsigned long usbToRs485Bytes = 0;
+unsigned long rs485ToUsbBytes = 0;
 
 // --- Setup ---
 void setup() {
+    // USB Serial to Lab Server
     Serial.begin(USB_BAUD);
     while (!Serial) { delay(10); }
 
+    // RS485 to L1 LinkMaster
     pinMode(RS485_DE_PIN, OUTPUT);
-    digitalWrite(RS485_DE_PIN, LOW);
+    digitalWrite(RS485_DE_PIN, LOW);  // Start in receive mode
+    RS485.begin(RS485_BAUD, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
 
-    RS485.begin(RS485_BAUD_DEFAULT, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
-
-    node.begin(1, RS485);
-    node.preTransmission(preTransmission);
-    node.postTransmission(postTransmission);
-
+    // Status LED
     pinMode(LED_PIN, OUTPUT);
-    inputBuffer.reserve(512);
-
-    Serial.println("{\"ok\":true,\"data\":{\"fw\":\"L2-Lab-Bridge\",\"ver\":\"1.0.0\"}}");
+    digitalWrite(LED_PIN, LOW);
 }
 
 // --- Main loop ---
 void loop() {
-    while (Serial.available()) {
-        char c = Serial.read();
-        if (c == '\n') {
-            inputBuffer.trim();
-            if (inputBuffer.length() > 0) {
-                processCommand(inputBuffer);
-            }
-            inputBuffer = "";
-        } else if (c != '\r') {
-            inputBuffer += c;
-            if (inputBuffer.length() > 1024) {
-                inputBuffer = "";
-                sendError("input_too_long");
-            }
-        }
+    // USB → RS485: Forward bytes from Lab Server to L1 LinkMaster
+    int usbAvail = Serial.available();
+    if (usbAvail > 0) {
+        if (usbAvail > BUF_SIZE) usbAvail = BUF_SIZE;
+        int bytesRead = Serial.readBytes(usbBuf, usbAvail);
+
+        // Switch to transmit mode
+        digitalWrite(RS485_DE_PIN, HIGH);
+        delayMicroseconds(50);
+
+        RS485.write(usbBuf, bytesRead);
+        RS485.flush();  // Wait for TX complete
+
+        // Switch back to receive mode
+        delayMicroseconds(50);
+        digitalWrite(RS485_DE_PIN, LOW);
+
+        usbToRs485Bytes += bytesRead;
+        digitalWrite(LED_PIN, HIGH);  // Blink on activity
     }
 
-    // Heartbeat LED
-    static unsigned long lastBlink = 0;
-    unsigned long now = millis();
-    if (now - lastBlink > 2000) {
-        digitalWrite(LED_PIN, HIGH);
-        lastBlink = now;
-    } else if (now - lastBlink > 100) {
-        digitalWrite(LED_PIN, LOW);
+    // RS485 → USB: Forward bytes from L1 LinkMaster to Lab Server
+    int rs485Avail = RS485.available();
+    if (rs485Avail > 0) {
+        if (rs485Avail > BUF_SIZE) rs485Avail = BUF_SIZE;
+        int bytesRead = RS485.readBytes(rs485Buf, rs485Avail);
+
+        Serial.write(rs485Buf, bytesRead);
+
+        rs485ToUsbBytes += bytesRead;
+        digitalWrite(LED_PIN, HIGH);  // Blink on activity
+    }
+
+    // LED off after brief flash
+    static unsigned long ledOffTime = 0;
+    if (digitalRead(LED_PIN) == HIGH) {
+        if (ledOffTime == 0) {
+            ledOffTime = millis() + 20;
+        } else if (millis() >= ledOffTime) {
+            digitalWrite(LED_PIN, LOW);
+            ledOffTime = 0;
+        }
     }
 }

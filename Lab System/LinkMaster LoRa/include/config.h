@@ -1,14 +1,21 @@
 /**
- * B4/L1 LinkMaster LoRa — Configuration
+ * L1 LinkMaster LoRa — Configuration
  *
- * SX1262 (RA-01SH) SPI pins and LoRa parameters.
+ * RS485 ↔ LoRa SX1262 bridge (Lab side).
+ * Receives JSON commands from L2 RS485 Bridge, sends/receives LoRa.
  * 865 MHz ISM band (India), SF10, BW 125kHz.
  */
 
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// --- USB Serial ---
+// --- RS485 Serial (to L2 RS485 Bridge) ---
+#define RS485_BAUD 115200
+#define RS485_RX_PIN 16
+#define RS485_TX_PIN 17
+#define RS485_DE_PIN 15     // Driver Enable (HIGH = transmit, LOW = receive)
+
+// --- USB Serial (debug only) ---
 #define USB_BAUD 115200
 
 // --- SX1262 SPI Pins ---
@@ -30,8 +37,5 @@
 
 // --- Receive buffer ---
 #define RX_BUF_SIZE 256
-
-// --- Status LED ---
-#define LED_PIN 2  // May conflict with DIO1 — adjust if needed
 
 #endif // CONFIG_H
