@@ -26,6 +26,7 @@ urlpatterns = [
     path('api/test/start/<int:test_id>/', views.api_test_start, name='api_test_start'),
     path('api/test/abort/', views.api_test_abort, name='api_test_abort'),
     path('api/test/status/', views.api_test_status, name='api_test_status'),
+    path('api/test/data/<int:test_id>/', views.api_test_data, name='api_test_data'),
     path('api/test/dut-prompt/', views.api_dut_prompt, name='api_dut_prompt'),
     path('api/test/dut-submit/', views.api_dut_submit, name='api_dut_submit'),
 ]

@@ -4,12 +4,12 @@ Sensor manager — unified API for reading all field device sensors.
 Uses either the hardware simulator or real serial handler depending on
 HARDWARE_BACKEND setting. Provides a polling loop and on-demand reads.
 
-Sensors polled:
-  Bus 1 (B2): EM flow meter (F1, addr 1), weighing scale (F2, addr 2),
-              4-20mA module (F3, addr 3), DUT meter (addr 20)
-  Bus 2 (B3): VFD status (addr 1)
-  GPIO: Valve positions, E-stop, contactor
-  Analog: Reservoir level, temperature, environment
+6-Node Architecture:
+  Ch1 B2 VFD Bridge:     VFD status (Modbus addr 1, regs 0x2100+)
+  Ch2 B3 Meter Bridge:   EM flow meter (addr 1), DUT meter (addr 20)
+  Ch3 B4 Scale+Pressure: Scale (SCALE_READ), Pressure (PRESSURE_READ)
+  Ch4 B5 GPIO Controller: E-stop, atmospheric sensors (SENSOR_READ)
+  Ch5 B6 Reservoir Monitor:   Reservoir level + temp (TANK_READ)
 """
 
 import logging
@@ -33,6 +33,7 @@ class SensorSnapshot:
     # Scale
     weight_kg: float = 0.0              # Tared weight
     weight_raw_kg: float = 0.0          # Raw weight
+    scale_power_on: bool = False        # Scale relay state
 
     # Pressure
     pressure_upstream_bar: float = 0.0  # PT-01
@@ -73,10 +74,13 @@ class SensorSnapshot:
     contactor_on: bool = True
     mcb_on: bool = True
 
-    # Comms
+    # Comms — per-channel online status
     lora_online: bool = False
-    bus1_online: bool = False
-    bus2_online: bool = False
+    b2_vfd_online: bool = False
+    b3_meter_online: bool = False
+    b4_scale_online: bool = False
+    b5_gpio_online: bool = False
+    b6_tank_online: bool = False
 
 
 class SensorManager:
@@ -102,10 +106,11 @@ class SensorManager:
         self._thread: threading.Thread | None = None
         self._poll_interval = 0.2  # 200ms default
         self._listeners: list[Callable[[SensorSnapshot], None]] = []
+        self._scale_power_on = False
 
         # Backend references
         self._simulator = None
-        self._bus_manager = None
+        self._channel_manager = None
 
     def _init_backend(self):
         """Initialise the appropriate backend."""
@@ -114,10 +119,10 @@ class SensorManager:
             self._simulator = get_simulator()
             logger.info("SensorManager using SIMULATOR backend")
         else:
-            from comms.serial_handler import BusManager
-            self._bus_manager = BusManager()
-            self._bus_manager.init_from_settings()
-            results = self._bus_manager.connect_all()
+            from comms.serial_handler import ChannelManager
+            self._channel_manager = ChannelManager()
+            self._channel_manager.init_from_settings()
+            results = self._channel_manager.connect_all()
             logger.info("SensorManager using REAL backend, connections: %s", results)
 
     @property
@@ -136,6 +141,10 @@ class SensorManager:
             self._listeners.remove(callback)
         except ValueError:
             pass
+
+    def set_scale_power(self, on: bool):
+        """Update cached scale power state (called by hardware.scale_power_on/off)."""
+        self._scale_power_on = on
 
     # ------------------------------------------------------------------
     #  Polling loop
@@ -162,8 +171,8 @@ class SensorManager:
         if self._thread:
             self._thread.join(timeout=2.0)
             self._thread = None
-        if self._bus_manager:
-            self._bus_manager.disconnect_all()
+        if self._channel_manager:
+            self._channel_manager.disconnect_all()
         logger.info("SensorManager stopped")
 
     def _poll_loop(self):
@@ -234,91 +243,146 @@ class SensorManager:
             contactor_on=data.get('CONT', True),
             mcb_on=data.get('MCB', True),
             lora_online=data.get('LORA', False),
-            bus1_online=data.get('BUS1', False),
-            bus2_online=data.get('BUS2', False),
+            b2_vfd_online=data.get('B2_VFD', False),
+            b3_meter_online=data.get('B3_METER', False),
+            b4_scale_online=data.get('B4_SCALE', False),
+            b5_gpio_online=data.get('B5_GPIO', False),
+            b6_tank_online=data.get('B6_TANK', False),
+            scale_power_on=True,
         )
 
     def _read_real(self) -> SensorSnapshot:
-        """Read all sensor values via real serial hardware."""
-        snap = SensorSnapshot(timestamp=time.time())
-        bus1 = self._bus_manager.bus1 if self._bus_manager else None
-        bus2 = self._bus_manager.bus2 if self._bus_manager else None
+        """Read all sensor values via real serial hardware (6-channel)."""
+        snap = SensorSnapshot(timestamp=time.time(), scale_power_on=self._scale_power_on)
+        ch = self._channel_manager
+        if not ch:
+            return snap
 
-        # --- Bus 1 reads ---
-        if bus1 and bus1.is_connected:
-            snap.bus1_online = True
+        # --- B3 Meter Bridge: EM flow + DUT totalizer ---
+        meter = ch.get('meter')
+        if meter and meter.is_connected:
+            snap.b3_meter_online = True
             try:
-                # EM Flow Meter (F1, addr 1)
-                r = bus1.modbus_read(1, 1, 0, 2)
+                # EM Flow Meter (addr 1, reg 0 = flow, reg 2 = totalizer)
+                r = meter.modbus_read(1, 0, 2)
                 if r.get('ok'):
-                    snap.flow_rate_lph = r['data'].get('value', 0.0)
-                r = bus1.modbus_read(1, 1, 2, 2)
-                if r.get('ok'):
-                    snap.em_totalizer_l = r['data'].get('value', 0.0)
+                    values = r.get('data', {}).get('values', [])
+                    if len(values) >= 1:
+                        snap.flow_rate_lph = float(values[0])
+                    if len(values) >= 2:
+                        snap.em_totalizer_l = float(values[1])
             except Exception:
                 logger.debug("EM meter read failed")
 
             try:
-                # Scale (F2, addr 2)
-                r = bus1.modbus_read(1, 2, 0, 2)
-                if r.get('ok'):
-                    snap.weight_kg = r['data'].get('value', 0.0)
-            except Exception:
-                logger.debug("Scale read failed")
-
-            try:
-                # 4-20mA (F3, addr 3)
-                r = bus1.modbus_read(1, 3, 0, 1)
-                if r.get('ok'):
-                    snap.pressure_upstream_bar = r['data'].get('value', 0.0)
-                r = bus1.modbus_read(1, 3, 1, 1)
-                if r.get('ok'):
-                    snap.pressure_downstream_bar = r['data'].get('value', 0.0)
-                r = bus1.modbus_read(1, 3, 2, 1)
-                if r.get('ok'):
-                    snap.water_temp_c = r['data'].get('value', 22.0)
-            except Exception:
-                logger.debug("4-20mA module read failed")
-
-            try:
-                # DUT (addr 20)
-                r = bus1.modbus_read(1, 20, 0, 2)
+                # DUT (addr 20, reg 0 = totalizer)
+                r = meter.modbus_read(20, 0, 2)
                 if r.get('ok'):
                     snap.dut_connected = True
-                    snap.dut_totalizer_l = r['data'].get('value', 0.0)
+                    values = r.get('data', {}).get('values', [])
+                    if values:
+                        snap.dut_totalizer_l = float(values[0])
                 else:
                     snap.dut_connected = False
             except Exception:
                 snap.dut_connected = False
 
+        # --- B4 Scale + Pressure Bridge ---
+        scale = ch.get('scale')
+        if scale and scale.is_connected:
+            snap.b4_scale_online = True
             try:
-                # GPIO: E-stop, contactor
-                r = bus1.gpio_get('ESTOP')
+                r = scale.scale_read()
                 if r.get('ok'):
-                    snap.estop_active = bool(r['data'].get('state', 0))
-                r = bus1.gpio_get('CONT')
-                if r.get('ok'):
-                    snap.contactor_on = bool(r['data'].get('state', 1))
+                    d = r.get('data', {})
+                    w = d.get('weight_kg')
+                    if w is not None:
+                        snap.weight_kg = float(w)
+                        snap.weight_raw_kg = float(w)
             except Exception:
-                logger.debug("GPIO read failed")
+                logger.debug("Scale read failed")
 
-        # --- Bus 2 reads ---
-        if bus2 and bus2.is_connected:
-            snap.bus2_online = True
             try:
-                # VFD status (addr 1)
-                r = bus2.modbus_read(2, 1, 0x2100, 1)
+                r = scale.pressure_read()
                 if r.get('ok'):
-                    snap.vfd_running = bool(r['data'].get('value', 0) & 0x01)
-                r = bus2.modbus_read(2, 1, 0x2103, 1)
+                    d = r.get('data', {})
+                    pt01 = d.get('pt01_mpa')
+                    pt02 = d.get('pt02_mpa')
+                    if pt01 is not None:
+                        snap.pressure_upstream_bar = float(pt01) * 10.0  # MPa → bar
+                    if pt02 is not None:
+                        snap.pressure_downstream_bar = float(pt02) * 10.0
+            except Exception:
+                logger.debug("Pressure read failed")
+
+        # --- B5 GPIO Controller: E-stop + atmospheric ---
+        gpio = ch.get('gpio')
+        if gpio and gpio.is_connected:
+            snap.b5_gpio_online = True
+            try:
+                r = gpio.sensor_read()
                 if r.get('ok'):
-                    snap.vfd_freq_hz = r['data'].get('value', 0) / 100.0
-                r = bus2.modbus_read(2, 1, 0x2104, 1)
+                    d = r.get('data', {})
+                    snap.estop_active = bool(d.get('estop_active', False))
+                    atm_temp = d.get('atm_temp_c')
+                    if atm_temp is not None:
+                        snap.atm_temp_c = float(atm_temp)
+                    atm_hum = d.get('atm_hum_pct')
+                    if atm_hum is not None:
+                        snap.atm_humidity_pct = float(atm_hum)
+                    # Barometric pressure — XY-MD02 doesn't provide this;
+                    # reads from firmware if a BMP280/BME280 is added later,
+                    # otherwise uses standard atmosphere (1013.25 hPa).
+                    atm_baro = d.get('atm_baro_hpa')
+                    if atm_baro is not None:
+                        snap.atm_baro_hpa = float(atm_baro)
+                    else:
+                        snap.atm_baro_hpa = 1013.25
+            except Exception:
+                logger.debug("GPIO sensor read failed")
+
+        # --- B6 Reservoir Monitor: reservoir level + temperature ---
+        tank = ch.get('tank')
+        if tank and tank.is_connected:
+            snap.b6_tank_online = True
+            try:
+                r = tank.tank_read()
                 if r.get('ok'):
-                    snap.vfd_current_a = r['data'].get('value', 0) / 100.0
-                r = bus2.modbus_read(2, 1, 0x2105, 1)
+                    d = r.get('data', {})
+                    level = d.get('level_pct')
+                    if level is not None:
+                        snap.reservoir_level_pct = float(level)
+                    temp = d.get('temp_c')
+                    if temp is not None:
+                        snap.water_temp_c = float(temp)
+            except Exception:
+                logger.debug("Tank read failed")
+
+        # --- B2 VFD Bridge: VFD status ---
+        vfd = ch.get('vfd')
+        if vfd and vfd.is_connected:
+            snap.b2_vfd_online = True
+            try:
+                r = vfd.modbus_read(1, 0x2100, 1)
                 if r.get('ok'):
-                    snap.vfd_fault = r['data'].get('value', 0)
+                    values = r.get('data', {}).get('values', [])
+                    if values:
+                        snap.vfd_running = bool(values[0] & 0x01)
+                r = vfd.modbus_read(1, 0x2103, 1)
+                if r.get('ok'):
+                    values = r.get('data', {}).get('values', [])
+                    if values:
+                        snap.vfd_freq_hz = values[0] / 100.0
+                r = vfd.modbus_read(1, 0x2104, 1)
+                if r.get('ok'):
+                    values = r.get('data', {}).get('values', [])
+                    if values:
+                        snap.vfd_current_a = values[0] / 100.0
+                r = vfd.modbus_read(1, 0x2105, 1)
+                if r.get('ok'):
+                    values = r.get('data', {}).get('values', [])
+                    if values:
+                        snap.vfd_fault = values[0]
             except Exception:
                 logger.debug("VFD read failed")
 

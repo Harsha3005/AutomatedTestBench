@@ -191,24 +191,42 @@ function testControl(testId) {
 
         async fetchData() {
             try {
-                const resp = await fetch(`/tests/${this.testId}/status/`);
+                const resp = await fetch(`/bench/api/test/data/${this.testId}/`);
                 if (!resp.ok) return;
                 const data = await resp.json();
+
+                // Update gauges (same format as WebSocket)
+                this.flowRate = data.flow_rate ?? this.flowRate;
+                this.pressure = data.pressure ?? this.pressure;
+                this.temperature = data.temperature ?? this.temperature;
+                this.weight = data.weight ?? this.weight;
+                this.vfdFreq = data.vfd_freq ?? this.vfdFreq;
 
                 this.testStatus = data.status || this.testStatus;
                 this.currentQPoint = data.current_q_point || '';
                 this.currentState = data.current_state || '';
                 this.overallPass = data.overall_pass;
 
+                if (data.current_state) {
+                    this._updateCompletedStates(data.current_state);
+                }
+
                 if (data.results) {
                     data.results.forEach(r => {
                         this.qResults[r.q_point] = {
-                            ref_volume: r.ref_volume_l,
-                            dut_volume: r.dut_volume_l,
+                            ref_volume: r.ref_volume,
+                            dut_volume: r.dut_volume,
                             error_pct: r.error_pct,
                             passed: r.passed,
                         };
                     });
+                }
+
+                if (data.dut_prompt) {
+                    this.dutPrompt = data.dut_prompt;
+                    if (data.dut_prompt.pending && !this.dutValue) {
+                        this.dutValue = '';
+                    }
                 }
 
                 if (['completed', 'failed', 'aborted'].includes(this.testStatus)) {

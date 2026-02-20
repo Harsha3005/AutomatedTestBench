@@ -1,5 +1,6 @@
 import json
-import random
+import logging
+import threading
 import time
 
 from django.contrib.auth import authenticate, login, logout
@@ -13,6 +14,8 @@ from meters.models import TestMeter
 from controller.models import DeviceGroup, FieldDevice
 from accounts.models import CustomUser
 from accounts.permissions import role_required
+
+logger = logging.getLogger(__name__)
 
 
 @login_required
@@ -98,52 +101,73 @@ def unlock(request):
 #  System Tab — Diagnostics & Commissioning
 # ---------------------------------------------------------------------------
 
-# In-memory simulated device states (until real hardware connected)
-_sim_states = {}
+# Lazy hardware initialisation (calls start_all() once on first API call)
+_hw_init = False
+_hw_lock = threading.Lock()
 
 
-def _get_simulated_state(device):
-    """Generate realistic simulated values for each device category."""
-    did = device.device_id
-    if did not in _sim_states:
-        # Initialise on first call
-        if device.category == 'valve':
-            # BV-L2 (3/4" lane) starts open; all others start closed
-            if did == 'BV-L2':
-                _sim_states[did] = {'state': 'open'}
-            else:
-                _sim_states[did] = {'state': 'closed'}
-        elif device.category == 'pump':
-            _sim_states[did] = {'state': 'stopped', 'frequency': 0.0}
-        elif device.category == 'indicator':
-            _sim_states[did] = {'red': False, 'green': True, 'buzzer': False}
-        elif device.category == 'meter':
-            _sim_states[did] = {'state': 'disconnected'}
-        elif device.category == 'communication':
-            _sim_states[did] = {'state': 'online', 'last_seen': time.time()}
-        else:
-            # Sensors — start at midpoint, except reservoir level (start at 85%)
-            if did == 'RES-LVL':
-                _sim_states[did] = {'value': 85.0}
-            else:
-                mn = device.min_value or 0
-                mx = device.max_value or 100
-                _sim_states[did] = {'value': round((mn + mx) / 2, 2)}
+def _ensure_hardware():
+    """Lazy-init hardware backend on first System tab API call."""
+    global _hw_init
+    if _hw_init:
+        return
+    with _hw_lock:
+        if _hw_init:
+            return
+        try:
+            from controller.hardware import start_all
+            start_all()
+            logger.info("Hardware subsystems started for System tab")
+        except Exception:
+            logger.exception("Hardware init failed")
+        _hw_init = True
 
-    state = _sim_states[did]
 
-    # Add sensor noise on every read
-    if device.category.startswith('sensor_'):
-        mn = device.min_value or 0
-        mx = device.max_value or 100
-        rng = mx - mn
-        state['value'] = round(
-            max(mn, min(mx, state['value'] + random.uniform(-rng * 0.005, rng * 0.005))), 2
-        )
-    if device.category == 'communication':
-        state['last_seen'] = time.time()
-
-    return dict(state)
+def _snapshot_to_device_state(snap, device_id):
+    """Map a SensorSnapshot to per-device JSON for the frontend."""
+    mapping = {
+        # Sensors
+        'RES-LVL':  {'value': round(snap.reservoir_level_pct, 1)},
+        'RES-TEMP': {'value': round(snap.water_temp_c, 2)},
+        'PT-01':    {'value': round(snap.pressure_upstream_bar, 3)},
+        'PT-02':    {'value': round(snap.pressure_downstream_bar, 3)},
+        'FT-01':    {'value': round(snap.flow_rate_lph, 1)},
+        'WT-01':    {'value': round(snap.weight_kg, 3)},
+        'ATM-TEMP': {'value': round(snap.atm_temp_c, 1)},
+        'ATM-HUM':  {'value': round(snap.atm_humidity_pct, 1)},
+        'ATM-BARO': {'value': round(snap.atm_baro_hpa, 1)},
+        # Pump
+        'P-01': {
+            'state': 'running' if snap.vfd_running else 'stopped',
+            'frequency': round(snap.vfd_freq_hz, 1),
+            'current': round(snap.vfd_current_a, 2),
+            'fault': snap.vfd_fault,
+        },
+        # DUT
+        'DUT': {'state': 'connected' if snap.dut_connected else 'disconnected'},
+        # Tower light
+        'TOWER': {'red': snap.tower_red, 'green': snap.tower_green, 'buzzer': snap.buzzer},
+        # Infrastructure
+        'MCB':  {'state': 'on' if snap.mcb_on else 'off'},
+        'CONT': {'state': 'on' if snap.contactor_on else 'off'},
+        'SCALE-PWR': {'state': 'on' if snap.scale_power_on else 'off'},
+        # Valves
+        'SV1':    {'state': 'open' if snap.valves.get('SV1', False) else 'closed'},
+        'BV-L1':  {'state': 'open' if snap.valves.get('BV-L1', False) else 'closed'},
+        'BV-L2':  {'state': 'open' if snap.valves.get('BV-L2', False) else 'closed'},
+        'BV-L3':  {'state': 'open' if snap.valves.get('BV-L3', False) else 'closed'},
+        'SV-DRN': {'state': 'open' if snap.valves.get('SV-DRN', False) else 'closed'},
+        'BV-BP':  {'state': 'open' if snap.valves.get('BV-BP', False) else 'closed'},
+        # Comms
+        'LORA': {'state': 'online' if snap.lora_online else 'offline', 'last_seen': snap.timestamp},
+        'BUS1': {
+            'state': 'online' if (snap.b3_meter_online or snap.b4_scale_online
+                                  or snap.b5_gpio_online or snap.b6_tank_online) else 'offline',
+            'last_seen': snap.timestamp,
+        },
+        'BUS2': {'state': 'online' if snap.b2_vfd_online else 'offline', 'last_seen': snap.timestamp},
+    }
+    return mapping.get(device_id, {})
 
 
 @login_required
@@ -162,13 +186,27 @@ def system_status(request):
 @login_required
 def system_api_status(request):
     """GET: Return all device states as JSON, grouped."""
+    _ensure_hardware()
+
+    from controller.hardware import get_sensor_manager
+    snap = get_sensor_manager().latest
+
     groups = DeviceGroup.objects.prefetch_related('devices').all()
     test_active = Test.objects.filter(
         status__in=['running', 'queued', 'acknowledged']
     ).exists()
 
+    # LoRa health status
+    lora_health = {'state': 'unknown'}
+    try:
+        from comms.lora_handler import get_lora_handler
+        lora_health = get_lora_handler().get_status()
+    except Exception:
+        pass
+
     data = {
         'test_active': test_active,
+        'lora_health': lora_health,
         'groups': [],
     }
     for group in groups:
@@ -178,7 +216,7 @@ def system_api_status(request):
             'devices': [],
         }
         for dev in group.devices.filter(is_active=True):
-            state = _get_simulated_state(dev)
+            state = _snapshot_to_device_state(snap, dev.device_id)
             g['devices'].append({
                 'device_id': dev.device_id,
                 'name': dev.name,
@@ -196,7 +234,9 @@ def system_api_status(request):
 @login_required
 @require_POST
 def system_api_command(request):
-    """POST: Send a manual command to a device."""
+    """POST: Send a manual command to a device via hardware controllers."""
+    _ensure_hardware()
+
     # Safety: no manual actuation during active tests
     test_active = Test.objects.filter(
         status__in=['running', 'queued', 'acknowledged']
@@ -233,29 +273,52 @@ def system_api_command(request):
             {'ok': False, 'error': f'Device {device_id} not found'}, status=404
         )
 
-    # Process command based on device category
-    state = _get_simulated_state(device)
+    from controller.hardware import (
+        get_sensor_manager, get_valve_controller, get_vfd_controller,
+        get_simulator, scale_power_on as hw_scale_on, scale_power_off as hw_scale_off,
+    )
 
-    if device.category == 'valve':
+    snap = get_sensor_manager().latest
+
+    # --- Scale Power Relay (device-specific, before category dispatch) ---
+    if device_id == 'SCALE-PWR':
+        current = 'on' if snap.scale_power_on else 'off'
         if action == 'toggle':
-            new_state = 'open' if state['state'] == 'closed' else 'closed'
-        elif action in ('open', 'close'):
-            new_state = action + ('d' if action == 'close' else '')
+            want_on = current != 'on'
+        elif action in ('on', 'off'):
+            want_on = action == 'on'
         else:
-            new_state = state['state']
+            return JsonResponse(
+                {'ok': False, 'error': f'Unknown action: {action}'}, status=400
+            )
+        ok = hw_scale_on() if want_on else hw_scale_off()
+        new_state = {'state': 'on' if want_on else 'off'}
+        return JsonResponse({'ok': ok, 'device_id': device_id, 'state': new_state})
+
+    elif device.category == 'valve':
+        vc = get_valve_controller()
+        current_open = vc.get_valve_state(device_id)
+
+        if action == 'toggle':
+            want_open = not current_open
+        elif action == 'open':
+            want_open = True
+        elif action == 'close':
+            want_open = False
+        else:
+            want_open = not current_open
 
         # Safety interlocks for SV1
-        if device_id == 'SV1' and new_state == 'open':
+        if device_id == 'SV1' and want_open:
             # 1. DUT/MUT must be present on the line
-            dut_state = _sim_states.get('DUT', {}).get('state', 'disconnected')
-            if dut_state != 'connected':
+            if not snap.dut_connected:
                 return JsonResponse(
                     {'ok': False, 'error': 'Cannot open SV1: no meter installed. Confirm MUT presence first.'},
                     status=400,
                 )
             # 2. At least one test lane must be open
             lanes_open = any(
-                _sim_states.get(lane, {}).get('state') == 'open'
+                vc.get_valve_state(lane)
                 for lane in ('BV-L1', 'BV-L2', 'BV-L3')
             )
             if not lanes_open:
@@ -264,34 +327,31 @@ def system_api_command(request):
                     status=400,
                 )
 
-        state['state'] = new_state
-        _sim_states[device_id] = state
+        ok = vc.open_valve(device_id) if want_open else vc.close_valve(device_id)
+        new_state = {'state': 'open' if want_open else 'closed'}
 
         # Safety interlock: auto-stop pump if no flow path remains
-        if device_id in ('SV1', 'BV-BP') and state['state'] == 'closed':
-            sv1 = _sim_states.get('SV1', {})
-            bvbp = _sim_states.get('BV-BP', {})
-            pump = _sim_states.get('P-01', {})
-            if pump.get('state') == 'running':
-                if sv1.get('state') != 'open' and bvbp.get('state') != 'open':
-                    _sim_states['P-01']['state'] = 'stopped'
-                    _sim_states['P-01']['frequency'] = 0.0
+        if device_id in ('SV1', 'BV-BP') and not want_open:
+            sv1_open = vc.get_valve_state('SV1')
+            bvbp_open = vc.get_valve_state('BV-BP')
+            if snap.vfd_running and not sv1_open and not bvbp_open:
+                get_vfd_controller().stop()
+
+        return JsonResponse({'ok': ok, 'device_id': device_id, 'state': new_state})
 
     elif device.category == 'pump':
-        # Safety interlock: pump can only start if at least one flow path is open
-        # Either main line (SV1) or bypass (BV-BP) must be open
-        def _has_open_flow_path():
-            sv1 = _sim_states.get('SV1', {})
-            bvbp = _sim_states.get('BV-BP', {})
-            return sv1.get('state') == 'open' or bvbp.get('state') == 'open'
+        vc = get_valve_controller()
+        vfd = get_vfd_controller()
 
-        # Safety interlock: reservoir must have at least 70% water level
+        # Safety interlock helpers
+        def _has_open_flow_path():
+            return vc.get_valve_state('SV1') or vc.get_valve_state('BV-BP')
+
         def _tank_level_ok():
-            res = _sim_states.get('RES-LVL', {})
-            return res.get('value', 0) >= 70
+            return snap.reservoir_level_pct >= 70
 
         if action == 'toggle':
-            if state['state'] == 'stopped':
+            if not snap.vfd_running:
                 if not _tank_level_ok():
                     return JsonResponse(
                         {'ok': False, 'error': 'Cannot start pump: reservoir level below 70%. Minimum 70% required.'},
@@ -302,11 +362,11 @@ def system_api_command(request):
                         {'ok': False, 'error': 'Cannot start pump: no flow path open. Open SV1 (main line) or BV-BP (bypass) first.'},
                         status=400,
                     )
-                state['state'] = 'running'
-                state['frequency'] = 30.0
+                ok = vfd.start(frequency=30.0)
+                new_state = {'state': 'running', 'frequency': 30.0}
             else:
-                state['state'] = 'stopped'
-                state['frequency'] = 0.0
+                ok = vfd.stop()
+                new_state = {'state': 'stopped', 'frequency': 0.0}
         elif action == 'start':
             if not _tank_level_ok():
                 return JsonResponse(
@@ -318,50 +378,93 @@ def system_api_command(request):
                     {'ok': False, 'error': 'Cannot start pump: no flow path open. Open SV1 (main line) or BV-BP (bypass) first.'},
                     status=400,
                 )
-            state['state'] = 'running'
-            state['frequency'] = body.get('frequency', 30.0)
+            freq = body.get('frequency', 30.0)
+            ok = vfd.start(frequency=freq)
+            new_state = {'state': 'running', 'frequency': freq}
         elif action == 'stop':
-            state['state'] = 'stopped'
-            state['frequency'] = 0.0
-        _sim_states[device_id] = state
+            ok = vfd.stop()
+            new_state = {'state': 'stopped', 'frequency': 0.0}
+        else:
+            return JsonResponse(
+                {'ok': False, 'error': f'Unknown pump action: {action}'}, status=400
+            )
+        return JsonResponse({'ok': ok, 'device_id': device_id, 'state': new_state})
 
     elif device.category == 'meter':
+        # DUT connect/disconnect — uses simulator in sim mode
+        from django.conf import settings as django_settings
+        backend = getattr(django_settings, 'HARDWARE_BACKEND', 'simulator')
+
         if action == 'toggle':
-            state['state'] = 'connected' if state['state'] == 'disconnected' else 'disconnected'
+            want_connected = not snap.dut_connected
         elif action == 'connect':
-            state['state'] = 'connected'
+            want_connected = True
         elif action == 'disconnect':
-            state['state'] = 'disconnected'
-        # Safety: if DUT is disconnected while SV1 is open, close SV1 and stop pump
-        if state['state'] == 'disconnected':
-            sv1 = _sim_states.get('SV1', {})
-            if sv1.get('state') == 'open':
-                _sim_states['SV1']['state'] = 'closed'
-                pump = _sim_states.get('P-01', {})
-                if pump.get('state') == 'running':
-                    bvbp = _sim_states.get('BV-BP', {})
-                    if bvbp.get('state') != 'open':
-                        _sim_states['P-01']['state'] = 'stopped'
-                        _sim_states['P-01']['frequency'] = 0.0
-        _sim_states[device_id] = state
+            want_connected = False
+        else:
+            want_connected = not snap.dut_connected
+
+        if backend == 'simulator':
+            sim = get_simulator()
+            if want_connected:
+                sim.connect_dut()
+            else:
+                sim.disconnect_dut()
+
+        new_state = {'state': 'connected' if want_connected else 'disconnected'}
+
+        # Safety: if DUT disconnected while SV1 is open, close SV1 and stop pump
+        if not want_connected:
+            vc = get_valve_controller()
+            if vc.get_valve_state('SV1'):
+                vc.close_valve('SV1')
+                if snap.vfd_running and not vc.get_valve_state('BV-BP'):
+                    get_vfd_controller().stop()
+
+        return JsonResponse({'ok': True, 'device_id': device_id, 'state': new_state})
 
     elif device.category == 'indicator':
-        if action == 'set':
-            for key in ('red', 'green', 'buzzer'):
-                if key in body:
-                    state[key] = bool(body[key])
-            _sim_states[device_id] = state
-        elif action in ('red', 'green', 'buzzer'):
-            state[action] = not state.get(action, False)
-            _sim_states[device_id] = state
+        # Tower light toggle/set
+        from django.conf import settings as django_settings
+        backend = getattr(django_settings, 'HARDWARE_BACKEND', 'simulator')
+
+        if backend == 'simulator':
+            sim = get_simulator()
+            if action == 'set':
+                red = body.get('red', snap.tower_red)
+                green = body.get('green', snap.tower_green)
+                buzzer = body.get('buzzer', snap.buzzer)
+                sim.set_tower_light(bool(red), False, bool(green), bool(buzzer))
+            elif action == 'red':
+                sim.set_tower_light(not snap.tower_red, False, snap.tower_green, snap.buzzer)
+            elif action == 'green':
+                sim.set_tower_light(snap.tower_red, False, not snap.tower_green, snap.buzzer)
+            elif action == 'buzzer':
+                sim.set_tower_light(snap.tower_red, False, snap.tower_green, not snap.buzzer)
+            else:
+                return JsonResponse(
+                    {'ok': False, 'error': f'Unknown indicator action: {action}'}, status=400
+                )
+        else:
+            from controller.hardware import get_tower_light
+            tower = get_tower_light()
+            if action == 'red':
+                tower._apply_state(not snap.tower_red, False, snap.tower_green, snap.buzzer)
+            elif action == 'green':
+                tower._apply_state(snap.tower_red, False, not snap.tower_green, snap.buzzer)
+            elif action == 'buzzer':
+                tower._apply_state(snap.tower_red, False, snap.tower_green, not snap.buzzer)
+
+        # Read fresh state after command
+        new_snap = get_sensor_manager().latest
+        new_state = {'red': new_snap.tower_red, 'green': new_snap.tower_green, 'buzzer': new_snap.buzzer}
+        return JsonResponse({'ok': True, 'device_id': device_id, 'state': new_state})
 
     else:
         return JsonResponse(
             {'ok': False, 'error': f'Device {device_id} does not support commands'},
             status=400,
         )
-
-    return JsonResponse({'ok': True, 'device_id': device_id, 'state': state})
 
 
 # ---------------------------------------------------------------------------
@@ -387,11 +490,12 @@ def emergency_stop(request):
         abort_test(test, reason=f'Emergency stop by {request.user.username}')
         count += 1
 
-    # Stop all pumps via simulator
-    for did, state in _sim_states.items():
-        if 'frequency' in state:
-            state['state'] = 'stopped'
-            state['frequency'] = 0.0
+    # Stop all hardware via emergency_stop
+    try:
+        from controller.hardware import emergency_stop as hw_estop
+        hw_estop()
+    except Exception:
+        logger.exception("Hardware emergency stop failed")
 
     if count:
         messages.warning(request, f'EMERGENCY STOP — {count} test(s) aborted.')
@@ -479,6 +583,82 @@ def api_test_status(request):
         'state': sm.state.value,
         'test_id': sm.test_id,
         'q_point': sm.current_q_point,
+    })
+
+
+@login_required
+def api_test_data(request, test_id):
+    """GET: HTTP fallback for WebSocket test data (same format as TestConsumer)."""
+    from bench_ui.models import SensorReading
+
+    test = get_object_or_404(Test.objects.select_related('meter'), pk=test_id)
+
+    # Latest sensor reading
+    sensor = SensorReading.objects.filter(
+        test_id=test_id,
+    ).order_by('-timestamp').first()
+
+    # Q-point results
+    results = []
+    for r in test.results.all().order_by('q_point'):
+        results.append({
+            'q_point': r.q_point,
+            'target_flow_lph': r.target_flow_lph,
+            'ref_volume': r.ref_volume_l,
+            'dut_volume': r.dut_volume_l,
+            'error_pct': r.error_pct,
+            'mpe_pct': r.mpe_pct,
+            'passed': r.passed,
+        })
+
+    # State machine info
+    sm_state = test.current_state or ''
+    sm_q_point = test.current_q_point or ''
+    try:
+        from controller.state_machine import get_active_machine
+        sm = get_active_machine()
+        if sm and sm.test_id == test_id:
+            sm_state = sm.state.value
+            sm_q_point = sm.current_q_point or sm_q_point
+    except Exception:
+        pass
+
+    # DUT manual entry prompt
+    dut_prompt = {'pending': False}
+    try:
+        from controller.state_machine import get_active_machine
+        from controller.dut_interface import DUTState, DUTMode
+        sm = get_active_machine()
+        if sm and sm.test_id == test_id:
+            if hasattr(sm, '_dut') and sm._dut is not None:
+                if sm._dut.mode == DUTMode.MANUAL and sm._dut.state in (
+                    DUTState.WAITING_BEFORE, DUTState.WAITING_AFTER,
+                ):
+                    dut_prompt = {
+                        'pending': True,
+                        'q_point': sm_q_point,
+                        'reading_type': (
+                            'before' if sm._dut.state == DUTState.WAITING_BEFORE
+                            else 'after'
+                        ),
+                    }
+    except Exception:
+        pass
+
+    return JsonResponse({
+        'type': 'test_data',
+        'test_id': test_id,
+        'status': test.status,
+        'overall_pass': test.overall_pass,
+        'current_state': sm_state,
+        'current_q_point': sm_q_point,
+        'flow_rate': sensor.flow_rate_lph if sensor else 0,
+        'pressure': sensor.pressure_upstream_bar if sensor else 0,
+        'temperature': sensor.water_temp_c if sensor else 0,
+        'weight': sensor.weight_kg if sensor else 0,
+        'vfd_freq': sensor.vfd_freq_hz if sensor else 0,
+        'results': results,
+        'dut_prompt': dut_prompt,
     })
 
 
@@ -769,11 +949,15 @@ def setup_page(request):
         'Stability Count': getattr(django_settings, 'SAFETY_STABILITY_COUNT', '—'),
     }
 
+    ports = getattr(django_settings, 'BENCH_SERIAL_PORTS', {})
     serial_config = {
-        'Bus 1 Port': getattr(django_settings, 'BENCH_SERIAL_PORT_BUS1', '—'),
-        'Bus 2 Port': getattr(django_settings, 'BENCH_SERIAL_PORT_BUS2', '—'),
+        'Ch 1 — VFD Bridge': ports.get('vfd', '—'),
+        'Ch 2 — Meter Bridge': ports.get('meter', '—'),
+        'Ch 3 — Scale+Pressure': ports.get('scale', '—'),
+        'Ch 4 — GPIO Controller': ports.get('gpio', '—'),
+        'Ch 5 — Reservoir Monitor': ports.get('tank', '—'),
+        'Ch 6 — LoRa': ports.get('lora', '—'),
         'Serial Baud': getattr(django_settings, 'BENCH_SERIAL_BAUD', '—'),
-        'Modbus Baud': getattr(django_settings, 'MODBUS_BAUD', '—'),
         'ASP Device ID': hex(getattr(django_settings, 'ASP_DEVICE_ID', 0)),
     }
 
