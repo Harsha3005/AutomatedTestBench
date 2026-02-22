@@ -114,7 +114,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 DEPLOYMENT_TYPE = 'bench'
 
 # --- Hardware backend ---
-HARDWARE_BACKEND = 'simulator'  # 'simulator' or 'real'
+HARDWARE_BACKEND = 'real'  # 'simulator' or 'real'
 
 # --- ACMIS Protocol ---
 ASP_AES_KEY = 'a' * 64  # Replace with secrets.token_hex(32) in production

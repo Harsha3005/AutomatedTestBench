@@ -135,7 +135,6 @@ def _snapshot_to_device_state(snap, device_id):
         'WT-01':    {'value': round(snap.weight_kg, 3)},
         'ATM-TEMP': {'value': round(snap.atm_temp_c, 1)},
         'ATM-HUM':  {'value': round(snap.atm_humidity_pct, 1)},
-        'ATM-BARO': {'value': round(snap.atm_baro_hpa, 1)},
         # Pump
         'P-01': {
             'state': 'running' if snap.vfd_running else 'stopped',

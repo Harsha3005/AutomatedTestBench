@@ -15,9 +15,9 @@ Simulated devices (23):
   Test lanes: BV-L1, BV-L2, BV-L3
   Collection: WT-01, SV-DRN
   Bypass: BV-BP
-  Environment: ATM-TEMP, ATM-HUM, ATM-BARO
+  Environment: ATM-TEMP, ATM-HUM
   Indicators: TOWER, MCB, CONT
-  Comms: LORA, BUS1, BUS2
+  Comms: LORA, B2_VFD, B3_METER, B4_SCALE, B5_GPIO, B6_TANK
 """
 
 import logging
@@ -96,7 +96,6 @@ class HardwareSimulator:
         # --- Environment ---
         self.atm_temp: float = 25.0          # degC
         self.atm_humidity: float = 55.0      # %RH
-        self.atm_baro: float = 1013.25       # hPa
 
         # --- Indicators ---
         self.tower_red: bool = False
@@ -109,10 +108,13 @@ class HardwareSimulator:
         self.contactor_on: bool = True
         self.estop_active: bool = False
 
-        # --- Comms ---
+        # --- Comms (per-channel online status) ---
         self.lora_online: bool = True
-        self.bus1_online: bool = True
-        self.bus2_online: bool = True
+        self.b2_vfd_online: bool = True
+        self.b3_meter_online: bool = True
+        self.b4_scale_online: bool = True
+        self.b5_gpio_online: bool = True
+        self.b6_tank_online: bool = True
 
     # ------------------------------------------------------------------
     #  Physics update (call periodically or before reading sensors)
@@ -232,8 +234,6 @@ class HardwareSimulator:
         self.atm_temp = max(15, min(45, self.atm_temp))
         self.atm_humidity += random.gauss(0, 0.05 * dt)
         self.atm_humidity = max(20, min(95, self.atm_humidity))
-        self.atm_baro += random.gauss(0, 0.01 * dt)
-        self.atm_baro = max(950, min(1050, self.atm_baro))
 
         # Reservoir temp drifts very slowly
         self.reservoir_temp += random.gauss(0, 0.005 * dt)
@@ -392,7 +392,6 @@ class HardwareSimulator:
                 # Environment
                 'ATM-TEMP': round(self.atm_temp, 1),
                 'ATM-HUM': round(self.atm_humidity, 1),
-                'ATM-BARO': round(self.atm_baro, 1),
                 # VFD
                 'P-01_running': self.vfd_running,
                 'P-01_freq': round(self.vfd_actual_freq, 1),
@@ -416,10 +415,13 @@ class HardwareSimulator:
                 'MCB': self.mcb_on,
                 'CONT': self.contactor_on,
                 'ESTOP': self.estop_active,
-                # Comms
+                # Comms (per-channel)
                 'LORA': self.lora_online,
-                'BUS1': self.bus1_online,
-                'BUS2': self.bus2_online,
+                'B2_VFD': self.b2_vfd_online,
+                'B3_METER': self.b3_meter_online,
+                'B4_SCALE': self.b4_scale_online,
+                'B5_GPIO': self.b5_gpio_online,
+                'B6_TANK': self.b6_tank_online,
             }
 
     def read_device(self, device_id: str) -> dict[str, Any]:
@@ -451,7 +453,7 @@ class HardwareSimulator:
             }
         elif device_id in ('MCB', 'CONT'):
             return {'state': 'on' if all_sensors[device_id] else 'off'}
-        elif device_id in ('LORA', 'BUS1', 'BUS2'):
+        elif device_id in ('LORA', 'B2_VFD', 'B3_METER', 'B4_SCALE', 'B5_GPIO', 'B6_TANK'):
             return {
                 'state': 'online' if all_sensors[device_id] else 'offline',
                 'last_seen': time.time(),
@@ -470,7 +472,13 @@ class HardwareSimulator:
         Process a command dict in the same format as serial_handler.
         Used by sensor_manager when HARDWARE_BACKEND='simulator'.
 
-        Supports: MB_READ, MB_WRITE, VALVE, DIVERTER, GPIO_SET, GPIO_GET, STATUS
+        Supports all 6-node command sets:
+          B2: MB_READ, MB_WRITE (VFD)
+          B3: MB_READ, MB_WRITE (EM + DUT)
+          B4: SCALE_READ, SCALE_TARE, SCALE_ZERO, SCALE_RAW, PRESSURE_READ
+          B5: VALVE, TOWER, SENSOR_READ, GPIO_SET, GPIO_GET
+          B6: TANK_READ, TANK_LEVEL, TANK_TEMP
+          All: STATUS
         """
         command = cmd.get('cmd', '')
 
@@ -486,71 +494,73 @@ class HardwareSimulator:
             return self._handle_gpio_set(cmd)
         elif command == 'GPIO_GET':
             return self._handle_gpio_get(cmd)
+        elif command == 'SCALE_READ':
+            return self._handle_scale_read()
+        elif command == 'SCALE_TARE':
+            return self._handle_scale_tare()
+        elif command == 'SCALE_ZERO':
+            return self._handle_scale_tare()
+        elif command == 'PRESSURE_READ':
+            return self._handle_pressure_read()
+        elif command == 'SENSOR_READ':
+            return self._handle_sensor_read()
+        elif command == 'TANK_READ':
+            return self._handle_tank_read()
+        elif command == 'TANK_LEVEL':
+            return self._handle_tank_level()
+        elif command == 'TANK_TEMP':
+            return self._handle_tank_temp()
+        elif command == 'TOWER':
+            return self._handle_tower_cmd(cmd)
         elif command == 'STATUS':
             return self._handle_status()
         else:
             return {'ok': False, 'error': 'UNKNOWN_CMD', 'message': f'Unknown: {command}'}
 
     def _handle_mb_read(self, cmd: dict) -> dict:
-        """Simulate Modbus read."""
+        """Simulate Modbus read. Routes by addr (no bus param needed)."""
         self.update()
         addr = cmd.get('addr', 0)
         reg = cmd.get('reg', 0)
-        bus = cmd.get('bus', 1)
 
         with self._lock:
-            if bus == 1:
-                if addr == 1:  # EM Flow Meter F1
-                    if reg == 0:
-                        return {'ok': True, 'data': {'value': round(self.flow_rate, 1)}}
-                    elif reg == 2:
-                        return {'ok': True, 'data': {'value': round(self.em_totalizer, 4)}}
-                elif addr == 2:  # Scale F2
-                    if reg == 0:
-                        w = self.scale_weight - self.scale_tare_offset if self.scale_tared else self.scale_weight
-                        return {'ok': True, 'data': {'value': round(max(0, w), 3)}}
-                elif addr == 3:  # 4-20mA Module F3
-                    if reg == 0:  # Upstream pressure
-                        return {'ok': True, 'data': {'value': round(self.pressure_upstream, 3)}}
-                    elif reg == 1:  # Downstream pressure
-                        return {'ok': True, 'data': {'value': round(self.pressure_downstream, 3)}}
-                    elif reg == 2:  # Temperature
-                        return {'ok': True, 'data': {'value': round(self.reservoir_temp, 2)}}
-                elif addr == 20:  # DUT
-                    if self.dut_connected:
-                        return {'ok': True, 'data': {'value': round(self.dut_totalizer, 4)}}
-                    else:
-                        return {'ok': False, 'error': 'TIMEOUT', 'message': 'DUT not connected'}
+            # VFD (addr 1, high register range 0x2000+) — B2 channel
+            if addr == 1 and reg >= 0x2000:
+                if reg == 0x2100:
+                    status = 0x01 if self.vfd_running else 0x00
+                    return {'ok': True, 'data': {'values': [status]}}
+                elif reg == 0x2103:
+                    return {'ok': True, 'data': {'values': [int(self.vfd_actual_freq * 100)]}}
+                elif reg == 0x2104:
+                    return {'ok': True, 'data': {'values': [int(max(0, self.vfd_current) * 100)]}}
+                elif reg == 0x2105:
+                    return {'ok': True, 'data': {'values': [self.vfd_fault]}}
 
-            elif bus == 2:
-                if addr == 1:  # VFD
-                    if reg == 0x2100:  # Status
-                        status = 0x01 if self.vfd_running else 0x00
-                        return {'ok': True, 'data': {'value': status}}
-                    elif reg == 0x2103:  # Actual frequency
-                        return {'ok': True, 'data': {'value': int(self.vfd_actual_freq * 100)}}
-                    elif reg == 0x2104:  # Current
-                        return {'ok': True, 'data': {'value': int(self.vfd_current * 100)}}
-                    elif reg == 0x2105:  # Fault code
-                        return {'ok': True, 'data': {'value': self.vfd_fault}}
+            # EM Flow Meter (addr 1, low register range) — B3 channel
+            elif addr == 1:
+                if reg == 0:
+                    return {'ok': True, 'data': {'values': [round(self.flow_rate, 1), round(self.em_totalizer, 4)]}}
+                elif reg == 2:
+                    return {'ok': True, 'data': {'values': [round(self.em_totalizer, 4)]}}
 
-        return {'ok': False, 'error': 'INVALID_ADDR', 'message': f'No device at bus={bus} addr={addr}'}
+            # DUT (addr 20) — B3 channel
+            elif addr == 20:
+                if self.dut_connected:
+                    return {'ok': True, 'data': {'values': [round(self.dut_totalizer, 4)]}}
+                else:
+                    return {'ok': False, 'error': 'TIMEOUT', 'message': 'DUT not connected'}
+
+        return {'ok': False, 'error': 'INVALID_ADDR', 'message': f'No device at addr={addr}'}
 
     def _handle_mb_write(self, cmd: dict) -> dict:
-        """Simulate Modbus write."""
+        """Simulate Modbus write. Routes by addr (no bus param needed)."""
         addr = cmd.get('addr', 0)
         reg = cmd.get('reg', 0)
         value = cmd.get('value', 0)
-        bus = cmd.get('bus', 1)
 
         with self._lock:
-            if bus == 1 and addr == 2 and reg == 0:
-                # Scale tare command (write 0 to register 0)
-                if value == 0:
-                    self.tare_scale()
-                    return {'ok': True, 'data': {'tared': True}}
-
-            elif bus == 2 and addr == 1:  # VFD
+            # VFD (addr 1, high register range) — B2 channel
+            if addr == 1 and reg >= 0x2000:
                 if reg == 0x2000:  # Control word
                     if value == 0x0001:  # Run forward
                         self.vfd_running = True
@@ -566,11 +576,107 @@ class HardwareSimulator:
                     self.vfd_set_frequency(freq)
                     return {'ok': True}
 
-        return {'ok': False, 'error': 'INVALID_WRITE', 'message': f'Cannot write bus={bus} addr={addr} reg={reg}'}
+        return {'ok': False, 'error': 'INVALID_WRITE', 'message': f'Cannot write addr={addr} reg={reg}'}
+
+    # ------------------------------------------------------------------
+    #  B4 Scale+Pressure command handlers
+    # ------------------------------------------------------------------
+
+    def _handle_scale_read(self) -> dict:
+        """Simulate SCALE_READ (B4)."""
+        self.update()
+        with self._lock:
+            w = self.scale_weight - self.scale_tare_offset if self.scale_tared else self.scale_weight
+            return {'ok': True, 'data': {
+                'weight_kg': round(max(0, w), 3),
+                'stale': False,
+                'age_ms': 0,
+            }}
+
+    def _handle_scale_tare(self) -> dict:
+        """Simulate SCALE_TARE / SCALE_ZERO (B4)."""
+        self.tare_scale()
+        return {'ok': True}
+
+    def _handle_pressure_read(self) -> dict:
+        """Simulate PRESSURE_READ (B4). Returns MPa."""
+        self.update()
+        with self._lock:
+            return {'ok': True, 'data': {
+                'pt01_mpa': round(self.pressure_upstream / 10.0, 4),  # bar → MPa
+                'pt02_mpa': round(self.pressure_downstream / 10.0, 4),
+                'pt01_ma': 0.0,
+                'pt02_ma': 0.0,
+            }}
+
+    # ------------------------------------------------------------------
+    #  B5 GPIO Controller command handlers
+    # ------------------------------------------------------------------
+
+    def _handle_sensor_read(self) -> dict:
+        """Simulate SENSOR_READ (B5). Returns atm sensors + E-stop."""
+        with self._lock:
+            return {'ok': True, 'data': {
+                'atm_temp_c': round(self.atm_temp, 1),
+                'atm_hum_pct': round(self.atm_humidity, 1),
+                'estop_active': self.estop_active,
+            }}
+
+    def _handle_tower_cmd(self, cmd: dict) -> dict:
+        """Simulate TOWER command (B5)."""
+        r = cmd.get('r', -1)
+        g = cmd.get('g', -1)
+        buz = cmd.get('buz', -1)
+        with self._lock:
+            if r >= 0:
+                self.tower_red = bool(r)
+            if g >= 0:
+                self.tower_green = bool(g)
+            if buz >= 0:
+                self.buzzer = bool(buz)
+        return {'ok': True}
+
+    # ------------------------------------------------------------------
+    #  B6 Reservoir Monitor command handlers
+    # ------------------------------------------------------------------
+
+    def _handle_tank_read(self) -> dict:
+        """Simulate TANK_READ (B6). Returns level + temp."""
+        self.update()
+        with self._lock:
+            return {'ok': True, 'data': {
+                'level_pct': round(self.reservoir_level, 1),
+                'dist_cm': 0.0,
+                'temp_c': round(self.reservoir_temp, 2),
+            }}
+
+    def _handle_tank_level(self) -> dict:
+        """Simulate TANK_LEVEL (B6)."""
+        self.update()
+        with self._lock:
+            return {'ok': True, 'data': {
+                'level_pct': round(self.reservoir_level, 1),
+                'dist_cm': 0.0,
+            }}
+
+    def _handle_tank_temp(self) -> dict:
+        """Simulate TANK_TEMP (B6)."""
+        self.update()
+        with self._lock:
+            return {'ok': True, 'data': {
+                'temp_c': round(self.reservoir_temp, 2),
+                'sensor_ok': True,
+            }}
+
+    # ------------------------------------------------------------------
+    #  B5 GPIO valve/diverter/gpio handlers
+    # ------------------------------------------------------------------
 
     def _handle_valve(self, cmd: dict) -> dict:
-        """Handle VALVE command."""
-        valve = cmd.get('valve', '')
+        """Handle VALVE command. Accepts both 'name' (firmware) and 'valve' (legacy)."""
+        valve = cmd.get('name', '') or cmd.get('valve', '')
+        # Translate firmware underscores back to Django hyphens
+        valve = valve.replace('_', '-')
         action = cmd.get('action', '').upper()
         try:
             self.set_valve(valve, action == 'OPEN')

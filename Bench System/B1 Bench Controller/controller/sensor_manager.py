@@ -43,7 +43,6 @@ class SensorSnapshot:
     water_temp_c: float = 0.0           # Reservoir / inline
     atm_temp_c: float = 0.0
     atm_humidity_pct: float = 0.0
-    atm_baro_hpa: float = 0.0
 
     # Reservoir
     reservoir_level_pct: float = 0.0
@@ -217,7 +216,6 @@ class SensorManager:
             water_temp_c=data.get('RES-TEMP', 22.0),
             atm_temp_c=data.get('ATM-TEMP', 25.0),
             atm_humidity_pct=data.get('ATM-HUM', 55.0),
-            atm_baro_hpa=data.get('ATM-BARO', 1013.0),
             reservoir_level_pct=data.get('RES-LVL', 85.0),
             dut_connected=data.get('DUT_connected', False),
             dut_totalizer_l=data.get('DUT_totalizer'),
@@ -330,14 +328,6 @@ class SensorManager:
                     atm_hum = d.get('atm_hum_pct')
                     if atm_hum is not None:
                         snap.atm_humidity_pct = float(atm_hum)
-                    # Barometric pressure — XY-MD02 doesn't provide this;
-                    # reads from firmware if a BMP280/BME280 is added later,
-                    # otherwise uses standard atmosphere (1013.25 hPa).
-                    atm_baro = d.get('atm_baro_hpa')
-                    if atm_baro is not None:
-                        snap.atm_baro_hpa = float(atm_baro)
-                    else:
-                        snap.atm_baro_hpa = 1013.25
             except Exception:
                 logger.debug("GPIO sensor read failed")
 
@@ -407,7 +397,6 @@ class SensorManager:
             'RES-TEMP': {'value': snap.water_temp_c},
             'ATM-TEMP': {'value': snap.atm_temp_c},
             'ATM-HUM': {'value': snap.atm_humidity_pct},
-            'ATM-BARO': {'value': snap.atm_baro_hpa},
             'P-01': {
                 'state': 'running' if snap.vfd_running else 'stopped',
                 'frequency': snap.vfd_freq_hz,

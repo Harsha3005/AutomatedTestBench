@@ -8,7 +8,7 @@
 
 {% block page_actions %}
     {% if user.can_configure_devices %}
-    <a href="{% url 'controller:device_config' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm" style="padding:4px 12px;min-height:28px;">
+    <a href="{% url 'controller:device_config' %}" class="btn-hmi btn-hmi-ghost btn-hmi-sm">
         <i data-lucide="settings-2" class="icon-xs"></i> Configure
     </a>
     {% endif %}
@@ -317,17 +317,6 @@
                          :style="'width:' + barPercent(d('ATM-HUM')) + '%;background:' + barColor(d('ATM-HUM'))"></div>
                 </div>
 
-                <div class="pid-env-row">
-                    <span class="pid-env-label">Barometric</span>
-                    <span>
-                        <span class="pid-env-value" x-text="fv('ATM-BARO', 0)">--</span>
-                        <span class="pid-env-unit">hPa</span>
-                    </span>
-                </div>
-                <div class="pid-minibar">
-                    <div class="pid-minibar-fill"
-                         :style="'width:' + barPercent(d('ATM-BARO')) + '%;background:' + barColor(d('ATM-BARO'))"></div>
-                </div>
             </div>
 
             <!-- Power Panel -->
@@ -343,12 +332,24 @@
                           :class="d('CONT') && d('CONT').state === 'on' ? 'pid-power-led--on' : 'pid-power-led--off'"></span>
                     <span class="pid-power-label">Contactor</span>
                 </div>
+                <div class="pid-power-row">
+                    <span class="pid-power-led"
+                          :class="d('SCALE-PWR') && d('SCALE-PWR').state === 'on' ? 'pid-power-led--on' : 'pid-power-led--off'"></span>
+                    <span class="pid-power-label">Scale</span>
+                    <button class="pid-pwr-btn"
+                            :class="d('SCALE-PWR') && d('SCALE-PWR').state === 'on' ? 'pid-pwr-btn--on' : ''"
+                            :disabled="testActive || !canActuate"
+                            @click="confirmCommand('SCALE-PWR', 'toggle', 'Scale Power Relay')"
+                            :title="d('SCALE-PWR') && d('SCALE-PWR').state === 'on' ? 'Scale ON — click to turn OFF' : 'Scale OFF — click to turn ON'">
+                        <span x-text="d('SCALE-PWR') && d('SCALE-PWR').state === 'on' ? 'ON' : 'OFF'">OFF</span>
+                    </button>
+                </div>
             </div>
 
             <!-- Tower Light Panel -->
             <div class="pid-sidebar-panel">
                 <div class="pid-sidebar-title">Tower Light</div>
-                <div style="display:flex;justify-content:center;align-items:center;gap:10px;">
+                <div style="display:flex;justify-content:center;align-items:center;gap:8px;">
                     <button class="sys-tower-light sys-tower--red"
                             :class="d('TOWER') && d('TOWER').red && 'sys-tower--on'"
                             :disabled="testActive || !canActuate"
@@ -371,15 +372,15 @@
             </div>
 
             <!-- Communications Panel -->
-            <div class="pid-sidebar-panel" style="flex:1;">
+            <div class="pid-sidebar-panel">
                 <div class="pid-sidebar-title">Communications</div>
                 <div class="pid-comm-row">
                     <span class="pid-comm-led"
-                          :class="d('LORA') && d('LORA').state === 'online' ? 'pid-comm-led--online' : 'pid-comm-led--offline'"></span>
+                          :class="'pid-comm-led--' + loraCommState()"></span>
                     <span class="pid-comm-label">LoRa</span>
                     <span class="pid-comm-status"
-                          :style="'color:' + (d('LORA') && d('LORA').state === 'online' ? '#4CAF50' : '#EF5350')"
-                          x-text="d('LORA') ? d('LORA').state : '--'">--</span>
+                          :style="'color:' + (loraHealth.state === 'online' ? '#4CAF50' : loraHealth.state === 'degraded' ? '#f59e0b' : '#EF5350')"
+                          x-text="loraHealth.state || '--'">--</span>
                 </div>
                 <div class="pid-comm-row">
                     <span class="pid-comm-led"
@@ -396,6 +397,33 @@
                     <span class="pid-comm-status"
                           :style="'color:' + (d('BUS2') && d('BUS2').state === 'online' ? '#4CAF50' : '#EF5350')"
                           x-text="d('BUS2') ? d('BUS2').state : '--'">--</span>
+                </div>
+            </div>
+
+            <!-- LoRa Health Detail Panel -->
+            <div class="pid-sidebar-panel">
+                <div class="pid-sidebar-title">LoRa Health</div>
+                <div class="pid-env-row">
+                    <span class="pid-env-label">Heartbeat</span>
+                    <span class="pid-env-value" x-text="loraHeartbeatText()">--</span>
+                </div>
+                <div class="pid-env-row">
+                    <span class="pid-env-label">Sent</span>
+                    <span class="pid-env-value" x-text="loraHealth.messages_sent ?? '--'">--</span>
+                </div>
+                <div class="pid-env-row">
+                    <span class="pid-env-label">Received</span>
+                    <span class="pid-env-value" x-text="loraHealth.messages_received ?? '--'">--</span>
+                </div>
+                <div class="pid-env-row">
+                    <span class="pid-env-label">Failed</span>
+                    <span class="pid-env-value"
+                          :style="(loraHealth.messages_failed > 0) ? 'color:#EF5350' : ''"
+                          x-text="loraHealth.messages_failed ?? '--'">--</span>
+                </div>
+                <div class="pid-env-row">
+                    <span class="pid-env-label">Queue</span>
+                    <span class="pid-env-value" x-text="loraHealth.queue_depth ?? '--'">--</span>
                 </div>
             </div>
 

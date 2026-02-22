@@ -154,8 +154,8 @@ class SafetyMonitor:
         snap = self._sensor_manager.latest
         alarms: list[SafetyAlarm] = []
 
-        # --- Overpressure ---
-        if snap.pressure_upstream_bar > self._pressure_max:
+        # --- Overpressure (B4 Scale+Pressure Bridge) ---
+        if snap.b4_scale_online and snap.pressure_upstream_bar > self._pressure_max:
             alarms.append(SafetyAlarm(
                 code=AlarmCode.OVERPRESSURE,
                 severity=AlarmSeverity.EMERGENCY,
@@ -164,8 +164,8 @@ class SafetyMonitor:
                 limit=self._pressure_max,
             ))
 
-        # --- Low reservoir ---
-        if snap.reservoir_level_pct < self._reservoir_min:
+        # --- Low reservoir (B6 Reservoir Monitor) ---
+        if snap.b6_tank_online and snap.reservoir_level_pct < self._reservoir_min:
             alarms.append(SafetyAlarm(
                 code=AlarmCode.LOW_RESERVOIR,
                 severity=AlarmSeverity.CRITICAL,
@@ -174,8 +174,8 @@ class SafetyMonitor:
                 limit=self._reservoir_min,
             ))
 
-        # --- Temperature out of range ---
-        if snap.water_temp_c > self._temp_max:
+        # --- Temperature out of range (B6 Reservoir Monitor) ---
+        if snap.b6_tank_online and snap.water_temp_c > self._temp_max:
             alarms.append(SafetyAlarm(
                 code=AlarmCode.TEMP_HIGH,
                 severity=AlarmSeverity.CRITICAL,
@@ -183,7 +183,7 @@ class SafetyMonitor:
                 value=snap.water_temp_c,
                 limit=self._temp_max,
             ))
-        if snap.water_temp_c < self._temp_min:
+        if snap.b6_tank_online and snap.water_temp_c < self._temp_min:
             alarms.append(SafetyAlarm(
                 code=AlarmCode.TEMP_LOW,
                 severity=AlarmSeverity.CRITICAL,
@@ -192,8 +192,8 @@ class SafetyMonitor:
                 limit=self._temp_min,
             ))
 
-        # --- Scale overload ---
-        if snap.weight_raw_kg > self._scale_max:
+        # --- Scale overload (B4 Scale+Pressure Bridge) ---
+        if snap.b4_scale_online and snap.weight_raw_kg > self._scale_max:
             alarms.append(SafetyAlarm(
                 code=AlarmCode.SCALE_OVERLOAD,
                 severity=AlarmSeverity.EMERGENCY,
@@ -202,32 +202,32 @@ class SafetyMonitor:
                 limit=self._scale_max,
             ))
 
-        # --- E-stop active ---
-        if snap.estop_active:
+        # --- E-stop active (B5 GPIO Controller) ---
+        if snap.b5_gpio_online and snap.estop_active:
             alarms.append(SafetyAlarm(
                 code=AlarmCode.ESTOP_ACTIVE,
                 severity=AlarmSeverity.EMERGENCY,
                 message="Hardware E-STOP is active",
             ))
 
-        # --- Contactor trip ---
-        if not snap.contactor_on:
+        # --- Contactor trip (B5 GPIO Controller) ---
+        if snap.b5_gpio_online and not snap.contactor_on:
             alarms.append(SafetyAlarm(
                 code=AlarmCode.CONTACTOR_TRIP,
                 severity=AlarmSeverity.EMERGENCY,
                 message="Main contactor has tripped",
             ))
 
-        # --- MCB trip ---
-        if not snap.mcb_on:
+        # --- MCB trip (B5 GPIO Controller) ---
+        if snap.b5_gpio_online and not snap.mcb_on:
             alarms.append(SafetyAlarm(
                 code=AlarmCode.MCB_TRIP,
                 severity=AlarmSeverity.EMERGENCY,
                 message="MCB has tripped",
             ))
 
-        # --- VFD fault ---
-        if snap.vfd_fault != 0:
+        # --- VFD fault (B2 VFD Bridge) ---
+        if snap.b2_vfd_online and snap.vfd_fault != 0:
             alarms.append(SafetyAlarm(
                 code=AlarmCode.VFD_FAULT,
                 severity=AlarmSeverity.CRITICAL,
