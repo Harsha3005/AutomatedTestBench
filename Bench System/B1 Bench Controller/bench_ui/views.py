@@ -231,6 +231,22 @@ def system_api_status(request):
 
 
 @login_required
+def lora_history_api(request):
+    """GET: Return recent LoRa message history as JSON."""
+    try:
+        from comms.lora_handler import get_lora_handler
+        handler = get_lora_handler()
+        limit = int(request.GET.get('limit', 50))
+        include_hb = request.GET.get('heartbeats', '0') == '1'
+        history = handler.get_history(
+            limit=min(limit, 200), include_heartbeats=include_hb,
+        )
+        return JsonResponse({'messages': history})
+    except Exception:
+        return JsonResponse({'messages': []})
+
+
+@login_required
 @require_POST
 def system_api_command(request):
     """POST: Send a manual command to a device via hardware controllers."""

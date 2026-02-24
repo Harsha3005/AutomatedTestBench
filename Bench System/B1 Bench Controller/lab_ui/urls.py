@@ -6,6 +6,8 @@ app_name = 'lab_ui'
 
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
+    path('api/lora-status/', views.lora_status_api, name='lora_status_api'),
+    path('api/lora-history/', views.lora_history_api, name='lora_history_api'),
     path('monitor/<int:test_id>/', views.live_monitor, name='live_monitor'),
     path('monitor/data/<int:test_id>/', views.monitor_data_api, name='monitor_data'),
     path('test/new/', views.test_wizard, name='test_wizard'),

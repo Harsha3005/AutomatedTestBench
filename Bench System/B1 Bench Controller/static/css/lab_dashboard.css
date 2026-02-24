@@ -1367,8 +1367,13 @@ body.lab-dashboard {
 .lab-status-led--offline {
     background: #ef4444;
 }
-.lab-status-led--unknown {
+.lab-status-led--unknown,
+.lab-status-led--stopped {
     background: #94a3b8;
+}
+.lab-status-led--degraded {
+    background: #f59e0b;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
 }
 
 /* Pagination */
@@ -1497,6 +1502,22 @@ body.lab-dashboard {
 .lab-dashboard a:hover {
     color: #4338ca;
 }
+/* Sidebar links — override .lab-dashboard a specificity */
+.lab-sidebar .sidebar-link {
+    color: rgba(255, 255, 255, 0.65);
+}
+.lab-sidebar .sidebar-link:hover {
+    color: #ffffff;
+}
+.lab-sidebar .sidebar-link.active {
+    color: #ffffff;
+}
+.lab-sidebar .sidebar-user-actions a {
+    color: rgba(255, 255, 255, 0.55);
+}
+.lab-sidebar .sidebar-user-actions a:hover {
+    color: #ffffff;
+}
 /* Button anchor overrides */
 .lab-dashboard a.btn-primary,
 .lab-dashboard a.btn-success,
@@ -1525,3 +1546,72 @@ body.lab-dashboard {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* ============================================================
+   LoRa Message History Modal
+   ============================================================ */
+.lab-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+}
+.lab-modal-panel {
+    background: var(--lab-card-bg);
+    border-radius: 12px;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12);
+    width: 800px;
+    max-width: 90vw;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.lab-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--lab-header-border);
+    font-weight: 700;
+    font-size: 15px;
+}
+.lab-modal-header i {
+    width: 18px;
+    height: 18px;
+    color: var(--lab-accent);
+}
+.lab-modal-body {
+    overflow-y: auto;
+    flex: 1;
+    padding: 0;
+}
+.lab-table--compact th,
+.lab-table--compact td {
+    padding: 6px 10px;
+    font-size: 12px;
+}
+.lora-dir-tx {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--lab-accent);
+}
+.lora-dir-rx {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(34, 197, 94, 0.1);
+    color: #22c55e;
+}
+.lab-text-danger { color: #ef4444; }
+.lab-text-success { color: #22c55e; }

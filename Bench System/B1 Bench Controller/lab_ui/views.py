@@ -40,13 +40,14 @@ def dashboard(request):
     ).order_by('-created_at')[:10]
 
     # LoRa link status (best-effort)
-    link_status = 'unknown'
+    lora_status = {'state': 'unknown'}
     try:
         from comms.lora_handler import get_lora_handler
         handler = get_lora_handler()
-        link_status = 'online' if handler.link_online else 'offline'
+        lora_status = handler.get_status()
     except Exception:
         pass
+    link_status = lora_status.get('state', 'unknown')
 
     # Week test count
     from datetime import timedelta
@@ -64,7 +65,39 @@ def dashboard(request):
         'week_tests': week_tests,
         'recent_tests': recent_tests,
         'link_status': link_status,
+        'lora_status': lora_status,
     })
+
+
+# ---------------------------------------------------------------------------
+#  LoRa Status API (US-306)
+# ---------------------------------------------------------------------------
+
+@login_required
+def lora_status_api(request):
+    """JSON endpoint for LoRa connection health (polled by dashboard)."""
+    try:
+        from comms.lora_handler import get_lora_handler
+        handler = get_lora_handler()
+        return JsonResponse(handler.get_status())
+    except Exception:
+        return JsonResponse({'state': 'unknown'})
+
+
+@login_required
+def lora_history_api(request):
+    """JSON endpoint for LoRa message history."""
+    try:
+        from comms.lora_handler import get_lora_handler
+        handler = get_lora_handler()
+        limit = int(request.GET.get('limit', 50))
+        include_hb = request.GET.get('heartbeats', '0') == '1'
+        history = handler.get_history(
+            limit=min(limit, 200), include_heartbeats=include_hb,
+        )
+        return JsonResponse({'messages': history})
+    except Exception:
+        return JsonResponse({'messages': []})
 
 
 # ---------------------------------------------------------------------------

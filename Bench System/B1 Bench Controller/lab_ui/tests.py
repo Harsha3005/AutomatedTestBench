@@ -182,6 +182,51 @@ class LabSettingsTest(TestCase):
 
 
 @override_settings(DEPLOYMENT_TYPE='lab')
+class LabLoRaStatusAPITest(TestCase):
+    """Tests for the lora_status_api endpoint (US-306)."""
+
+    def setUp(self):
+        self.admin = CustomUser.objects.create_user(
+            username='labadmin', password='test123', role='admin',
+        )
+        self.client.login(username='labadmin', password='test123')
+
+    def test_lora_status_returns_json(self):
+        resp = self.client.get(reverse('lab_ui:lora_status_api'))
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn('state', data)
+
+    def test_lora_status_requires_login(self):
+        self.client.logout()
+        resp = self.client.get(reverse('lab_ui:lora_status_api'))
+        self.assertEqual(resp.status_code, 302)
+
+
+@override_settings(DEPLOYMENT_TYPE='lab')
+class LabLoRaHistoryAPITest(TestCase):
+    """Tests for the lora_history_api endpoint."""
+
+    def setUp(self):
+        self.admin = CustomUser.objects.create_user(
+            username='labadmin', password='test123', role='admin',
+        )
+        self.client.login(username='labadmin', password='test123')
+
+    def test_lora_history_returns_json(self):
+        resp = self.client.get(reverse('lab_ui:lora_history_api'))
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn('messages', data)
+        self.assertIsInstance(data['messages'], list)
+
+    def test_lora_history_requires_login(self):
+        self.client.logout()
+        resp = self.client.get(reverse('lab_ui:lora_history_api'))
+        self.assertEqual(resp.status_code, 302)
+
+
+@override_settings(DEPLOYMENT_TYPE='lab')
 class LabCSVExportTest(TestCase):
     def setUp(self):
         self.admin = CustomUser.objects.create_user(

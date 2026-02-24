@@ -17,6 +17,7 @@ urlpatterns = [
     path('system/', views.system_status, name='system_status'),
     path('system/api/status/', views.system_api_status, name='system_api_status'),
     path('system/api/command/', views.system_api_command, name='system_api_command'),
+    path('system/api/lora-history/', views.lora_history_api, name='lora_history_api'),
     # Emergency Stop
     path('emergency-stop/', views.emergency_stop, name='emergency_stop'),
     # Settings

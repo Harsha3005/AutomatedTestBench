@@ -6,6 +6,7 @@ function systemStatus() {
     return {
         groups: [],
         dev: {},            // flat device lookup: { 'BV1': {...}, 'PT-01': {...} }
+        loraHealth: {},     // LoRa handler health from get_status()
         testActive: false,
         canActuate: false,
         pollTimer: null,
@@ -16,6 +17,11 @@ function systemStatus() {
         confirmMsg: '',
         pendingDeviceId: '',
         pendingAction: '',
+
+        // LoRa message history
+        loraHistoryOpen: false,
+        loraHistoryShowHB: false,
+        loraHistory: [],
 
         init() {
             this.canActuate = document.body.dataset.canActuate === 'true';
@@ -39,6 +45,7 @@ function systemStatus() {
                 const data = await resp.json();
                 this.groups = data.groups;
                 this.testActive = data.test_active;
+                this.loraHealth = data.lora_health || {};
 
                 // Build flat device lookup
                 const map = {};
@@ -121,6 +128,46 @@ function systemStatus() {
             if (pct > 90 || pct < 10) return 'var(--bench-danger)';
             if (pct > 80 || pct < 20) return 'var(--bench-warning)';
             return 'var(--bench-accent)';
+        },
+
+        /** Format LoRa heartbeat age as human-readable text */
+        loraHeartbeatText() {
+            const s = this.loraHealth.last_heartbeat_ago_s;
+            if (s === null || s === undefined) return '--';
+            const secs = Math.round(s);
+            if (secs < 60) return secs + 's ago';
+            return Math.floor(secs / 60) + 'm ago';
+        },
+
+        /** LoRa comm LED state for P&ID sidebar */
+        loraCommState() {
+            const st = this.loraHealth.state;
+            if (st === 'online') return 'online';
+            if (st === 'degraded') return 'degraded';
+            if (st === 'offline') return 'offline';
+            return 'offline';
+        },
+
+        // --- LoRa History ---
+
+        async fetchLoRaHistory() {
+            try {
+                const hb = this.loraHistoryShowHB ? '1' : '0';
+                const resp = await fetch('/bench/system/api/lora-history/?limit=100&heartbeats=' + hb, {
+                    credentials: 'same-origin',
+                });
+                if (!resp.ok) return;
+                const data = await resp.json();
+                this.loraHistory = data.messages || [];
+            } catch (e) {
+                console.warn('[LoRa History] Fetch failed:', e);
+            }
+        },
+
+        formatMsgTime(ts) {
+            if (!ts) return '--';
+            var d = new Date(ts * 1000);
+            return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         },
 
         // --- Command Helpers ---

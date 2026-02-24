@@ -11,10 +11,12 @@ Usage:
     handler.stop()
 """
 
+import base64
 import json
 import logging
 import threading
 import time
+from collections import deque
 from enum import Enum
 from typing import Callable
 
@@ -69,7 +71,11 @@ class LoRaHandler:
     def __init__(self):
         self._aes_key, self._hmac_key = get_keys()
         self._device_id = getattr(settings, 'ASP_DEVICE_ID', 0x0002)
-        self._lora_port = getattr(settings, 'LORA_SERIAL_PORT', '/dev/ttyLORA')
+        ports = getattr(settings, 'BENCH_SERIAL_PORTS', {})
+        self._lora_port = getattr(
+            settings, 'LORA_SERIAL_PORT',
+            ports.get('lora', '/dev/ttyLORA'),
+        )
         self._lora_baud = getattr(settings, 'LORA_SERIAL_BAUD', 115200)
 
         self._serial: SerialHandler | None = None
@@ -81,6 +87,20 @@ class LoRaHandler:
         self._heartbeat_thread: threading.Thread | None = None
         self._receive_thread: threading.Thread | None = None
         self._link_online = False
+
+        # Health tracking
+        self._started_at: float = 0.0
+        self._last_heartbeat_sent: float = 0.0
+        self._last_message_received: float = 0.0
+        self._messages_sent: int = 0
+        self._messages_received: int = 0
+        self._messages_failed: int = 0
+        self._heartbeats_sent: int = 0
+
+        # Message history (circular buffer)
+        self._history: deque = deque(maxlen=200)
+        self._history_counter: int = 0
+        self._history_lock = threading.Lock()
 
         # Incoming message callbacks: command → [callable]
         self._handlers: dict[str, list[Callable]] = {}
@@ -109,6 +129,7 @@ class LoRaHandler:
         self._mq.start()
 
         self._running = True
+        self._started_at = time.time()
 
         self._heartbeat_thread = threading.Thread(
             target=self._heartbeat_loop, name='LoRa-Heartbeat', daemon=True,
@@ -139,6 +160,127 @@ class LoRaHandler:
     @property
     def link_online(self) -> bool:
         return self._link_online
+
+    def get_status(self) -> dict:
+        """Return comprehensive health/status dict for UI display."""
+        now = time.time()
+
+        # Determine state
+        if not self._running:
+            state = 'stopped'
+        elif not self._link_online:
+            state = 'offline'
+        elif (self._last_heartbeat_sent
+              and (now - self._last_heartbeat_sent) > HEARTBEAT_INTERVAL_S * 3):
+            state = 'degraded'
+        else:
+            state = 'online'
+
+        uptime_s = (now - self._started_at) if self._started_at else 0.0
+
+        last_hb_ago = None
+        if self._last_heartbeat_sent:
+            last_hb_ago = round(now - self._last_heartbeat_sent, 1)
+
+        last_msg_ago = None
+        if self._last_message_received:
+            last_msg_ago = round(now - self._last_message_received, 1)
+
+        queue_depth = 0
+        offline_queue_depth = 0
+        if self._mq:
+            queue_depth = self._mq.queue_depth
+            offline_queue_depth = self._mq.offline_queue_depth
+
+        return {
+            'state': state,
+            'running': self._running,
+            'link_online': self._link_online,
+            'uptime_s': round(uptime_s, 1),
+            'last_heartbeat_sent': self._last_heartbeat_sent,
+            'last_heartbeat_ago_s': last_hb_ago,
+            'last_message_received': self._last_message_received,
+            'last_message_ago_s': last_msg_ago,
+            'messages_sent': self._messages_sent,
+            'messages_received': self._messages_received,
+            'messages_failed': self._messages_failed,
+            'heartbeats_sent': self._heartbeats_sent,
+            'queue_depth': queue_depth,
+            'offline_queue_depth': offline_queue_depth,
+            'history_count': len(self._history),
+        }
+
+    # ------------------------------------------------------------------
+    #  Message history
+    # ------------------------------------------------------------------
+
+    def get_history(self, limit: int = 50,
+                    include_heartbeats: bool = False) -> list[dict]:
+        """Return recent message history, newest first.
+
+        Args:
+            limit: max entries to return (default 50)
+            include_heartbeats: if False, filters out HEARTBEAT messages
+        """
+        with self._history_lock:
+            entries = list(self._history)
+        if not include_heartbeats:
+            entries = [e for e in entries if e['msg_type'] != 'HEARTBEAT']
+        entries.reverse()
+        return entries[:limit]
+
+    def _record_message(self, direction: str, msg_type: str, status: str,
+                        payload: dict | None = None):
+        """Record a message in the circular history buffer."""
+        summary = self._build_summary(direction, msg_type, payload)
+        test_id = None
+        payload_size = 0
+        if payload:
+            test_id = payload.get('test_id')
+            payload_size = len(json.dumps(payload, default=str))
+        with self._history_lock:
+            self._history_counter += 1
+            self._history.append({
+                'id': self._history_counter,
+                'timestamp': time.time(),
+                'direction': direction,
+                'msg_type': msg_type,
+                'status': status,
+                'summary': summary,
+                'payload_size': payload_size,
+                'test_id': test_id,
+            })
+
+    @staticmethod
+    def _build_summary(direction: str, msg_type: str,
+                       payload: dict | None) -> str:
+        """Build a human-readable one-line summary for a message."""
+        tag = 'TX' if direction == 'TX' else 'RX'
+        if not payload:
+            return f'{tag} {msg_type}'
+        tid = payload.get('test_id', '?')
+        if msg_type == 'TEST_STATUS':
+            return f'{tag} Status: Test #{tid} {payload.get("q_point", "")} {payload.get("state", "")}'
+        if msg_type == 'TEST_RESULT':
+            return f'{tag} Result: Test #{tid} {payload.get("q_point", "")}'
+        if msg_type == 'TEST_COMPLETE':
+            v = 'PASS' if payload.get('overall_pass') else 'FAIL'
+            return f'{tag} Complete: Test #{tid} {v}'
+        if msg_type == 'START_TEST':
+            return f'{tag} Start: Test #{tid} {payload.get("meter_serial", "")}'
+        if msg_type == 'START_TEST_ACK':
+            return f'{tag} ACK: Test #{tid} {payload.get("status", "")}'
+        if msg_type == 'EMERGENCY_STOP':
+            return f'{tag} E-STOP: {payload.get("reason", "")}'
+        if msg_type == 'EMERGENCY_ACK':
+            return f'{tag} E-STOP ACK: {payload.get("status", "")}'
+        if msg_type == 'HEARTBEAT':
+            return f'{tag} Heartbeat'
+        if msg_type == 'RESULT_REQUEST':
+            return f'{tag} Result Req: Test #{tid}'
+        if msg_type == 'APPROVAL_STATUS':
+            return f'{tag} Approval: Test #{tid} {payload.get("status", "")}'
+        return f'{tag} {msg_type}'
 
     # ------------------------------------------------------------------
     #  Outgoing: bench -> lab
@@ -199,11 +341,16 @@ class LoRaHandler:
             'uptime': int(time.time()),
             'status': 'online',
         })
+        self._last_heartbeat_sent = time.time()
+        self._heartbeats_sent += 1
 
     def _send(self, payload: dict):
         """Queue a message for sending via MessageQueue."""
         if self._mq:
             self._mq.send(payload)
+            self._messages_sent += 1
+            msg_type = payload.get('command', 'UNKNOWN')
+            self._record_message('TX', msg_type, 'ok', payload)
 
     # ------------------------------------------------------------------
     #  Incoming: lab -> bench
@@ -232,7 +379,10 @@ class LoRaHandler:
 
     def _dispatch_incoming(self, asp_frame):
         """Route incoming ASP frame to registered handlers."""
+        self._last_message_received = time.time()
+        self._messages_received += 1
         command = asp_frame.payload.get('command', '')
+        self._record_message('RX', command, 'dispatched', asp_frame.payload)
         handlers = self._handlers.get(command, [])
         for handler in handlers:
             try:
@@ -264,11 +414,12 @@ class LoRaHandler:
         try:
             for frag_obj in frags:
                 raw = fragment_to_bytes(frag_obj)
-                cmd = {'cmd': 'LORA_TX', 'data': raw.hex()}
+                cmd = {'cmd': 'LORA_SEND', 'data': base64.b64encode(raw).decode('ascii')}
                 self._serial.send_command(cmd, timeout=2.0)
             return True
         except Exception:
             logger.debug("LoRa transmit failed", exc_info=True)
+            self._messages_failed += 1
             return False
 
     def _receive_loop(self):
@@ -288,9 +439,9 @@ class LoRaHandler:
                 except (json.JSONDecodeError, ValueError):
                     continue
 
-                if msg.get('cmd') == 'LORA_RX':
-                    data_hex = msg.get('data', '')
-                    raw = bytes.fromhex(data_hex)
+                if msg.get('event') == 'LORA_RX':
+                    data_b64 = msg.get('data', '')
+                    raw = base64.b64decode(data_b64)
                     frag_obj = fragment_from_bytes(raw)
                     frame = self._reassembler.add(frag_obj)
                     if frame is not None:

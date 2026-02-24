@@ -87,21 +87,33 @@
 
     <!-- Quick Info Stack -->
     <div>
-        <!-- Communication Status -->
-        <div class="lab-card lab-mb-md">
+        <!-- Communication Status (HTMX-polled) -->
+        <div class="lab-card lab-mb-md" id="lora-status-card"
+             hx-get="{% url 'lab_ui:lora_status_api' %}"
+             hx-trigger="load, every 5s"
+             hx-swap="none"
+             hx-on::after-request="updateLoRaStatus(event)">
             <div class="lab-card-header">
                 <span class="lab-card-title"><i data-lucide="radio"></i> Communication</span>
             </div>
             <div class="lab-flex-gap lab-mb-md">
-                <div class="lab-status-led lab-status-led--{{ link_status }}"></div>
+                <div class="lab-status-led" id="lora-led"></div>
                 <div>
-                    <div class="lab-text-bold" style="text-transform:capitalize;">{{ link_status }}</div>
+                    <div class="lab-text-bold" id="lora-state-text" style="text-transform:capitalize;">{{ link_status }}</div>
                     <div class="lab-text-muted lab-text-xs">LoRa Link (865 MHz)</div>
                 </div>
             </div>
             <div class="lab-text-sm lab-text-muted" style="line-height:2;">
+                <div class="lab-flex-between"><span>Heartbeat</span><span class="lab-text-bold" style="color:var(--color-text);" id="lora-heartbeat">—</span></div>
+                <div class="lab-flex-between"><span>Messages</span><span class="lab-text-bold" style="color:var(--color-text);" id="lora-msg-counts">—</span></div>
+                <div class="lab-flex-between"><span>Queue</span><span class="lab-text-bold" style="color:var(--color-text);" id="lora-queue">—</span></div>
                 <div class="lab-flex-between"><span>Protocol</span><span class="lab-text-bold" style="color:var(--color-text);">ASP v1</span></div>
                 <div class="lab-flex-between"><span>Encryption</span><span class="lab-text-bold" style="color:var(--color-text);">AES-256</span></div>
+            </div>
+            <div style="margin-top:8px;border-top:1px solid var(--lab-header-border);padding-top:8px;">
+                <button class="btn-lab btn-lab-secondary btn-lab-sm" style="width:100%" onclick="openLoRaHistory()">
+                    <i data-lucide="scroll-text"></i> Message Log
+                </button>
             </div>
         </div>
 
@@ -169,4 +181,109 @@
     });
 </script>
 {% endif %}
+
+<script>
+function updateLoRaStatus(event) {
+    if (!event.detail.successful) return;
+    try {
+        var data = JSON.parse(event.detail.xhr.responseText);
+        var led = document.getElementById('lora-led');
+        var stateText = document.getElementById('lora-state-text');
+        var heartbeat = document.getElementById('lora-heartbeat');
+        var msgCounts = document.getElementById('lora-msg-counts');
+        var queue = document.getElementById('lora-queue');
+
+        // Update LED class
+        led.className = 'lab-status-led lab-status-led--' + (data.state || 'unknown');
+        stateText.textContent = data.state || 'unknown';
+
+        // Heartbeat ago
+        if (data.last_heartbeat_ago_s !== null && data.last_heartbeat_ago_s !== undefined) {
+            var secs = Math.round(data.last_heartbeat_ago_s);
+            heartbeat.textContent = secs < 60 ? secs + 's ago' : Math.floor(secs / 60) + 'm ago';
+        } else {
+            heartbeat.textContent = '\u2014';
+        }
+
+        // Message counts
+        var sent = data.messages_sent || 0;
+        var rcvd = data.messages_received || 0;
+        var fail = data.messages_failed || 0;
+        msgCounts.textContent = sent + ' sent / ' + rcvd + ' rcvd' + (fail ? ' / ' + fail + ' fail' : '');
+
+        // Queue depth
+        var qd = data.queue_depth || 0;
+        var oq = data.offline_queue_depth || 0;
+        queue.textContent = qd + (oq ? ' (' + oq + ' offline)' : '');
+    } catch (e) { /* ignore parse errors */ }
+}
+
+function openLoRaHistory() {
+    document.getElementById('lora-history-modal').style.display = 'flex';
+    fetchLoRaHistory();
+}
+
+function closeLoRaHistory() {
+    document.getElementById('lora-history-modal').style.display = 'none';
+}
+
+function fetchLoRaHistory() {
+    var includeHB = document.getElementById('lora-hb-toggle').checked ? '1' : '0';
+    fetch('{% url "lab_ui:lora_history_api" %}?limit=100&heartbeats=' + includeHB)
+        .then(function(resp) { return resp.json(); })
+        .then(function(data) {
+            var body = document.getElementById('lora-history-body');
+            var msgs = data.messages || [];
+            if (msgs.length === 0) {
+                body.innerHTML = '<div class="lab-text-center lab-text-muted" style="padding:24px;">No messages recorded</div>';
+                return;
+            }
+            var html = '<table class="lab-table lab-table--compact"><thead><tr>'
+                + '<th>Dir</th><th>Type</th><th>Summary</th><th>Time</th><th>Status</th>'
+                + '</tr></thead><tbody>';
+            msgs.forEach(function(msg) {
+                var dirClass = msg.direction === 'TX' ? 'lora-dir-tx' : 'lora-dir-rx';
+                var statusClass = msg.status === 'failed' ? 'lab-text-danger' : 'lab-text-success';
+                var ts = msg.timestamp ? new Date(msg.timestamp * 1000).toLocaleTimeString('en-GB') : '--';
+                html += '<tr>'
+                    + '<td><span class="' + dirClass + '">' + msg.direction + '</span></td>'
+                    + '<td class="col-mono lab-text-xs">' + msg.msg_type + '</td>'
+                    + '<td class="lab-text-xs">' + (msg.summary || '') + '</td>'
+                    + '<td class="col-mono lab-text-xs">' + ts + '</td>'
+                    + '<td class="lab-text-xs ' + statusClass + '">' + msg.status + '</td>'
+                    + '</tr>';
+            });
+            html += '</tbody></table>';
+            body.innerHTML = html;
+            lucide.createIcons();
+        })
+        .catch(function() {
+            document.getElementById('lora-history-body').innerHTML =
+                '<div class="lab-text-center lab-text-muted" style="padding:24px;">Failed to load</div>';
+        });
+}
+</script>
+
+<!-- LoRa Message History Modal -->
+<div id="lora-history-modal" class="lab-modal-overlay" style="display:none;" onclick="if(event.target===this)closeLoRaHistory()">
+    <div class="lab-modal-panel">
+        <div class="lab-modal-header">
+            <span class="lab-flex-gap"><i data-lucide="radio"></i> LoRa Message Log</span>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <label class="lab-text-xs lab-text-muted" style="display:flex;align-items:center;gap:4px;">
+                    <input type="checkbox" id="lora-hb-toggle" onchange="fetchLoRaHistory()"> Heartbeats
+                </label>
+                <button class="btn-lab btn-lab-secondary btn-lab-sm" onclick="fetchLoRaHistory()">
+                    <i data-lucide="refresh-cw"></i>
+                </button>
+                <button class="btn-lab btn-lab-secondary btn-lab-sm" onclick="closeLoRaHistory()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+        </div>
+        <div class="lab-modal-body" id="lora-history-body">
+            <div class="lab-text-center lab-text-muted" style="padding:24px;">Loading...</div>
+        </div>
+    </div>
+</div>
 {% endblock %}

@@ -2322,3 +2322,109 @@ body.bench-hmi[data-theme="light"] .filter-drawer {
     transition: transform 0.1s, opacity 0.1s;
 }
 
+/* ============================================================
+   LoRa Message History Overlay
+   ============================================================ */
+.lora-history-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.lora-history-panel {
+    background: var(--bench-surface);
+    border: 1px solid var(--bench-card-border);
+    border-radius: 8px;
+    width: 700px;
+    max-height: 440px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.lora-history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--bench-card-border);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--bench-text);
+}
+.lora-history-body {
+    overflow-y: auto;
+    flex: 1;
+    padding: 4px;
+}
+.lora-msg-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+}
+.lora-msg-row:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+.lora-msg-dir {
+    font-weight: 700;
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    width: 22px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.lora-msg-dir--tx {
+    background: rgba(66, 165, 245, 0.15);
+    color: #42A5F5;
+}
+.lora-msg-dir--rx {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4CAF50;
+}
+.lora-msg-type {
+    color: var(--bench-accent);
+    font-size: 9px;
+    font-weight: 600;
+    width: 100px;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.lora-msg-summary {
+    flex: 1;
+    color: var(--bench-text-muted);
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.lora-msg-time {
+    color: var(--bench-text-muted);
+    font-size: 9px;
+    flex-shrink: 0;
+}
+.lora-msg-status {
+    font-size: 8px;
+    font-weight: 600;
+    text-transform: uppercase;
+    width: 42px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.lora-msg-status--ok,
+.lora-msg-status--dispatched {
+    color: #4CAF50;
+}
+.lora-msg-status--failed {
+    color: #EF5350;
+}
+
